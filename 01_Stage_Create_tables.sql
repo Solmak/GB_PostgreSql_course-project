@@ -1,4 +1,4 @@
-/* Пункт 1
+/* Этап 1
 Проанализировать бизнес-логику приложения и создать структуру базы данных, которая
 может использоваться для хранения данных этого приложения. В базе данных должно быть
 минимум десять таблиц. Если таблиц получается более двадцати то рекомендуется
@@ -9,7 +9,6 @@
 -- Создаем с нуля всю структуру. Возможно кроме внешних ключей.
 
 -- Очистка структуры
--- TODO определить порядок
 BEGIN;
     DROP TABLE IF EXISTS stars;
     DROP TABLE IF EXISTS persons;
@@ -22,8 +21,8 @@ BEGIN;
     DROP TABLE IF EXISTS genres;
     DROP TABLE IF EXISTS movie_types;
     DROP TABLE IF EXISTS roles;
-    DROP TABLE IF EXISTS movies;
     DROP TABLE IF EXISTS videos;
+    DROP TABLE IF EXISTS movies;
     DROP TABLE IF EXISTS video_types;
     DROP TABLE IF EXISTS person_positions;
     DROP TYPE  IF EXISTS genders;
@@ -35,20 +34,20 @@ BEGIN;
 -- Типы авторизации
     CREATE TABLE authorization_types (
         id SERIAL PRIMARY KEY,
-        name VARCHAR(20)
+        name VARCHAR(20) UNIQUE
     );
 
 -- Типы изображений
     CREATE TABLE image_types (
         id SERIAL PRIMARY KEY,
-        type_name VARCHAR(20)
+        type_name VARCHAR(20) UNIQUE
     );
 
 -- Изображения
     CREATE TABLE images (
         id SERIAL PRIMARY KEY,
         image_type_id INTEGER,
-        image_url VARCHAR(150),
+        image_url VARCHAR(150) UNIQUE,
         CONSTRAINT images_image_type_id_fk 
             FOREIGN KEY (image_type_id)
             REFERENCES image_types(id)
@@ -58,7 +57,7 @@ BEGIN;
 -- Пользователи
     CREATE TABLE users (
         id SERIAL PRIMARY KEY,
-        phone VARCHAR(12) UNIQUE,
+        phone VARCHAR(15) UNIQUE,
         is_confirmed_phone BOOLEAN DEFAULT FALSE,
         email VARCHAR(256) UNIQUE,
         is_confirmed_email BOOLEAN DEFAULT FALSE,
@@ -82,7 +81,7 @@ BEGIN;
         personal_site VARCHAR(250),
         vk VARCHAR(100),
         twitter VARCHAR(100),
-        interests VARCHAR(30)[],
+--        interests VARCHAR(30)[],  -- Заполнение сложных данных...
         about_yourself TEXT,
         avatar_image_id INTEGER,
         CONSTRAINT user_profiles_user_id_fk 
@@ -98,7 +97,7 @@ BEGIN;
 -- Жанры фильмов
     CREATE TABLE genres (
         id SERIAL PRIMARY KEY,
-        genre_name VARCHAR(20)
+        genre_name VARCHAR(20) UNIQUE
     );
 
 -- Профили зрителей
@@ -117,15 +116,16 @@ BEGIN;
 -- Типы фильмов
     CREATE TABLE movie_types (
         id SERIAL PRIMARY KEY,
-        type_name VARCHAR(20)
+        type_name VARCHAR(40) UNIQUE
     );
 
 -- Фильмы
     CREATE TABLE movies (
         id SERIAL PRIMARY KEY,
-        movie_type INTEGER NOT NULL,
+        movie_type INTEGER NOT NULL,    -- TODO Оставим fk на 3-й этап
         title VARCHAR(150) NOT NULL,
         original_title VARCHAR(150) NOT NULL,
+        age_restriction age_restrictions,
         movie_genres INTEGER[],     -- TODO внешний ключ на массив
         date_of_release DATE,
         country VARCHAR(50),
@@ -139,7 +139,7 @@ BEGIN;
     CREATE TABLE stars (
         movie_id INTEGER NOT NULL,
         user_id INTEGER NOT NULL,
-        number_of_stars INTEGER,    -- Триггер на добавление 1-10
+        number_of_stars INTEGER,    -- TODO Триггер на добавление 1-10
         rated_at DATE,
         PRIMARY KEY (movie_id, user_id)
     );
@@ -147,24 +147,29 @@ BEGIN;
 -- Типы видео
     CREATE TABLE video_types (
         id SERIAL PRIMARY KEY,
-        type_name VARCHAR(20)
+        type_name VARCHAR(20) UNIQUE
     );
 
 -- Видео
     CREATE TABLE videos (
         id SERIAL PRIMARY KEY,
+        movie_id INTEGER,
         video_type_id INTEGER,
-        image_url VARCHAR(150),
+        image_url VARCHAR(150) UNIQUE,
         CONSTRAINT videos_video_type_id_fk 
             FOREIGN KEY (video_type_id)
             REFERENCES video_types(id)
+            ON DELETE SET NULL,
+        CONSTRAINT videos_movie_id_fk 
+            FOREIGN KEY (movie_id)
+            REFERENCES movies(id)
             ON DELETE SET NULL
     );
 
 -- Виды персоналий 
     CREATE TABLE person_positions (
         id SERIAL PRIMARY KEY,
-        position_name VARCHAR(20)
+        position_name VARCHAR(20) UNIQUE
         );
 
 -- Персоналии
@@ -174,7 +179,7 @@ BEGIN;
         person_surname VARCHAR(25),
         person_middle_name VARCHAR(25),
         person_full_name_original VARCHAR(60),
-        main_photo_id INTEGER,
+        main_photo_id INTEGER UNIQUE,
         birthday DATE,
         height REAL,
         positions_ids INTEGER[],     -- TODO внешний ключ на массив
@@ -187,8 +192,8 @@ BEGIN;
 --В ролях
     CREATE TABLE roles (
         id SERIAL PRIMARY KEY,
-        movie_id INTEGER,
-        person_id INTEGER NOT NULL,
+        movie_id INTEGER NOT NULL,
+        person_id INTEGER NOT NULL, -- TODO внешний ключ на 3 этап
         character_name VARCHAR(100),
         is_main_role BOOLEAN NOT NULL DEFAULT FALSE,
         CONSTRAINT roles_movie_id_fk 
