@@ -9,6 +9,7 @@
 # ide config file
 .dbeaver-data-sources*.xml
 .dbeaver/
+.settings
 .project
 Diagrams/
 Scripts/
