@@ -6,7 +6,7 @@
 +stars;
 */
 
-
+BEGIN;
 -- viewer_profiles
 INSERT INTO viewer_profiles (user_id,genres_ids,age_restriction)
 VALUES
@@ -172,7 +172,7 @@ VALUES
   (56,'{12,6}','0+'); 
   
 -- movies
-INSERT INTO movies (movie_type,title,original_title,age_restriction,movie_genres,date_of_release,country,running_time,stars_rate)
+INSERT INTO movies (movie_type_id,title,original_title,age_restriction,movie_genres,date_of_release,country,running_time,stars_rate)
 VALUES
   (3,'pellentesque a, facilisis','risus. In mi','6+','{4}','2005-07-04','South Africa','1:35:44','3.6'),
   (2,'tempor, est','nec orci.','12+','{7}','1932-10-02','Philippines','4:06:21','3.4'),
@@ -204,7 +204,7 @@ VALUES
   (4,'est','ligula','6+','{21}','2005-09-02','Singapore','11:07:35','5.0'),
   (2,'lobortis quis, pede.','leo. Cras vehicula','6+','{23}','1940-06-08','Russian Federation','17:24:48','4.1'),
   (4,'auctor ullamcorper,','ridiculus mus.','16+','{2}','1955-08-05','South Africa','9:00:50','4.2');
-INSERT INTO movies (movie_type,title,original_title,age_restriction,movie_genres,date_of_release,country,running_time,stars_rate)
+INSERT INTO movies (movie_type_id,title,original_title,age_restriction,movie_genres,date_of_release,country,running_time,stars_rate)
 VALUES
   (2,'ullamcorper. Duis','auctor, velit eget','0+','{1}','2015-09-24','New Zealand','11:07:33','3.9'),
   (2,'velit. Pellentesque','eu, accumsan','6+','{21}','2014-06-02','Colombia','18:56:15','5.7'),
@@ -226,7 +226,7 @@ VALUES
   (2,'ligula','egestas. Aliquam','12+','{1}','1952-06-06','Peru','23:25:05','3.6'),
   (4,'ut erat. Sed','et','6+','{28}','1946-02-16','Norway','15:32:44','4.7'),
   (3,'Aenean eget','dignissim pharetra. Nam','0+','{6}','1943-02-13','Costa Rica','23:20:22','5.1');
-INSERT INTO movies (movie_type,title,original_title,age_restriction,movie_genres,date_of_release,country,running_time,stars_rate)
+INSERT INTO movies (movie_type_id,title,original_title,age_restriction,movie_genres,date_of_release,country,running_time,stars_rate)
 VALUES
   (4,'non massa non','ante.','12+','{8}','1950-10-22','Germany','19:12:46','5.7'),
   (3,'nec, malesuada','In mi','0+','{17}','1988-06-26','Indonesia','0:04:22','4.3'),
@@ -258,7 +258,7 @@ VALUES
   (2,'ut,','egestas nunc','12+','{14}','1945-08-05','Russian Federation','9:11:26','4.7'),
   (2,'Maecenas libero','lobortis risus. In','12+','{14}','1990-11-14','Pakistan','0:27:36','5.6'),
   (3,'sem. Pellentesque','In','0+','{1,5,9}','1969-03-07','Chile','11:17:36','4.0');
-INSERT INTO movies (movie_type,title,original_title,age_restriction,movie_genres,date_of_release,country,running_time,stars_rate)
+INSERT INTO movies (movie_type_id,title,original_title,age_restriction,movie_genres,date_of_release,country,running_time,stars_rate)
 VALUES
   (2,'tincidunt,','pede, nonummy ut,','16+','{14}','2005-03-27','France','4:33:51','7.2'),
   (2,'Nunc sed','penatibus','16+','{13}','1984-08-19','Brazil','2:57:04','6.6'),
@@ -280,7 +280,7 @@ VALUES
   (3,'congue','tellus id nunc','12+','{27}','1998-09-17','South Africa','23:56:39','5.7'),
   (1,'quis,','pharetra sed,','12+','{1,2,3}','2012-09-29','Ireland','5:01:01','3.3'),
   (1,'Mauris magna. Duis','egestas. Sed pharetra,','6+','{4}','1986-09-22','France','14:19:24','5.4');
-INSERT INTO movies (movie_type,title,original_title,age_restriction,movie_genres,date_of_release,country,running_time,stars_rate)
+INSERT INTO movies (movie_type_id,title,original_title,age_restriction,movie_genres,date_of_release,country,running_time,stars_rate)
 VALUES
   (3,'elit.','eu','16+','{5}','1940-10-14','Singapore','1:48:13','4.5'),
   (2,'a, enim. Suspendisse','Pellentesque ut','6+','{13,7}','1955-07-25','Russian Federation','0:22:35','6.0'),
@@ -312,7 +312,7 @@ VALUES
   (4,'nibh. Quisque','viverra. Maecenas iaculis','12+','{7}','1984-07-09','Sweden','5:10:22','4.8'),
   (2,'quis turpis','sed leo. Cras','12+','{27,20}','1978-05-10','South Korea','10:57:40','5.8'),
   (1,'ac','erat nonummy ultricies','6+','{24}','1933-06-21','Netherlands','19:37:07','2.0');
-INSERT INTO movies (movie_type,title,original_title,age_restriction,movie_genres,date_of_release,country,running_time,stars_rate)
+INSERT INTO movies (movie_type_id,title,original_title,age_restriction,movie_genres,date_of_release,country,running_time,stars_rate)
 VALUES
   (4,'mollis','Aliquam erat','12+','{16,22}','2001-10-22','Vietnam','22:25:33','4.0'),
   (3,'faucibus orci luctus','neque. Sed eget','6+','{13}','2011-04-22','Australia','17:50:58','6.8'),
@@ -768,3 +768,5 @@ VALUES
   (141,44,7,'2019-09-26'),
   (148,99,2,'2012-05-19'),
   (22,49,2,'2016-11-28'); 
+
+COMMIT;

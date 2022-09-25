@@ -5,6 +5,7 @@
 +images;
 +user_profiles;
 */
+BEGIN;
 
 INSERT INTO users (phone,is_confirmed_phone,email,is_confirmed_email,authorization_type)
 VALUES
@@ -497,3 +498,5 @@ VALUES
   ('Finn','Alston','male','1998-11-23','Vietnam','Oryol','http://facebook.com/one','https://zoom.us/sub/cars?p=8','http://yahoo.com/fr?ad=115','urna justo faucibus lectus, a sollicitudin orci sem eget massa.',29,148),
   ('Rebecca','Kirkland','male','1999-04-22','France','Kilsyth','https://rbc.ru/site','http://cnn.com/group/9?page=1&offset=1','https://google.com/sub/cars?k=0','Phasellus dapibus quam quis diam. Pellentesque habitant morbi tristique',82,149),
   ('Maggie','Lynch','male','2002-10-25','China','Karak','https://drom.ru/en-ca','http://wikipedia.org/en-ca?page=1&offset=1','http://naver.com/group/9?q=4','sed, est. Nunc laoreet lectus quis massa. Mauris vestibulum,',131,150);
+
+  COMMIT;

@@ -11,6 +11,8 @@
 -- Очистка структуры
 BEGIN;
     DROP TABLE IF EXISTS stars;
+    DROP TABLE IF EXISTS roles;
+    DROP TABLE IF EXISTS movie_positions;
     DROP TABLE IF EXISTS persons;
     DROP TABLE IF EXISTS viewer_profiles;
     DROP TABLE IF EXISTS user_profiles;
@@ -19,12 +21,11 @@ BEGIN;
     DROP TABLE IF EXISTS image_types;
     DROP TABLE IF EXISTS authorization_types;
     DROP TABLE IF EXISTS genres;
-    DROP TABLE IF EXISTS movie_types;
-    DROP TABLE IF EXISTS roles;
     DROP TABLE IF EXISTS videos;
     DROP TABLE IF EXISTS movies;
+    DROP TABLE IF EXISTS movie_types;
     DROP TABLE IF EXISTS video_types;
-    DROP TABLE IF EXISTS person_positions;
+    DROP TABLE IF EXISTS positions;
     DROP TYPE  IF EXISTS genders;
     DROP TYPE  IF EXISTS age_restrictions;
 --ROLLBACK;
@@ -122,7 +123,7 @@ BEGIN;
 -- Фильмы
     CREATE TABLE movies (
         id SERIAL PRIMARY KEY,
-        movie_type INTEGER NOT NULL,    -- TODO Оставим fk на 3-й этап
+        movie_type_id INTEGER NOT NULL,    -- TODO Оставим fk на 3-й этап
         title VARCHAR(150) NOT NULL,
         original_title VARCHAR(150) NOT NULL,
         age_restriction age_restrictions,
@@ -140,7 +141,7 @@ BEGIN;
         movie_id INTEGER NOT NULL,
         user_id INTEGER NOT NULL,
         number_of_stars INTEGER,    -- TODO Триггер на добавление 1-10
-        rated_at DATE,
+        rated_at DATE,              -- FIXME переделать на timestamp  
         PRIMARY KEY (movie_id, user_id)
     );
 
@@ -167,7 +168,7 @@ BEGIN;
     );
 
 -- Виды персоналий 
-    CREATE TABLE person_positions (
+    CREATE TABLE positions (
         id SERIAL PRIMARY KEY,
         position_name VARCHAR(20) UNIQUE
         );
@@ -201,5 +202,14 @@ BEGIN;
             REFERENCES movies(id)
             ON DELETE SET NULL
     );
+
+-- Добавил еще одну. :) Сделал бы в сложном типе, но нереально сгенерить тестовые данные
+    CREATE TABLE movie_positions (
+        movie_id INTEGER NOT NULL,
+        person_id INTEGER NOT NULL,
+        position_id INTEGER NOT NULL,
+        PRIMARY KEY (movie_id, person_id, position_id)
+    );
+
 --ROLLBACK;
 COMMIT;

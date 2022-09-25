@@ -5,6 +5,11 @@
 # Created by https://www.toptal.com/developers/gitignore/api/windows,linux,visualstudiocode
 # Edit at https://www.toptal.com/developers/gitignore?templates=windows,linux,visualstudiocode
 
+### DBeaver ###
+# ide config file
+.dbeaver-data-sources*.xml
+.dbeaver/
+.project
 ### VisualStudioCode ###
 .vscode/*
 !.vscode/settings.json

@@ -8,6 +8,8 @@
 +person_positions;
 */
 
+BEGIN;
+
 INSERT INTO authorization_types (name)
 VALUES
   ('Логин, пароль'),
@@ -69,7 +71,7 @@ VALUES
   ('Ток-шоу'),
   ('Игры');
 
-INSERT INTO person_positions (position_name)
+INSERT INTO positions (position_name)
 VALUES
   ('Актер'),
   ('Режисер'),
@@ -81,3 +83,5 @@ VALUES
   ('Художник по костюмам'),
   ('Светооператор'),
   ('Консультант');
+  
+  COMMIT;
