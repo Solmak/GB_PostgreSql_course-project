@@ -11,6 +11,7 @@
 .dbeaver/
 .project
 Diagrams/
+Scripts/
 ### VisualStudioCode ###
 .vscode/*
 !.vscode/settings.json
