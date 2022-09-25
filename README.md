@@ -14,5 +14,5 @@
 ## Этапы
 
 1. Проанализировать бизнес-логику приложения и создать структуру базы данных, котораяможет использоваться для хранения данных этого приложения. В базе данных должно быть минимум десять таблиц. Если таблиц получается более двадцати то рекомендуетсяо граничиться частью функционала приложения и не превышать это количество. В качествеотчета по этой части проекта необходимо приложить команды создания таблиц.
-   1. Отчет: [01_Stage_Create_tables.sql](https://github.com/Solmak/GB_PostgreSql_course-project/blob/master/01_Step_Create_tables.sql)
-   2. [01_Stage_Create_tables.sql raw](https://raw.githubusercontent.com/Solmak/GB_PostgreSql_course-project/master/01_Step_Create_tables.sql)
+   1. Отчет: [01_Stage_Create_tables.sql](https://github.com/Solmak/GB_PostgreSql_course-project/blob/master/01_Stage_Create_tables.sql)
+   2. [01_Stage_Create_tables.sql raw](https://raw.githubusercontent.com/Solmak/GB_PostgreSql_course-project/master/01_Stage_Create_tables.sql)
