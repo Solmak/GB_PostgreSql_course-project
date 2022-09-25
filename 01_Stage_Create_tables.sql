@@ -123,7 +123,7 @@ BEGIN;
 -- Фильмы
     CREATE TABLE movies (
         id SERIAL PRIMARY KEY,
-        movie_type_id INTEGER NOT NULL,    -- TODO Оставим fk на 3-й этап
+        movie_type_id INTEGER NOT NULL,    -- [x] Оставим fk на 3-й этап
         title VARCHAR(150) NOT NULL,
         original_title VARCHAR(150) NOT NULL,
         age_restriction age_restrictions,
@@ -140,8 +140,8 @@ BEGIN;
     CREATE TABLE stars (
         movie_id INTEGER NOT NULL,
         user_id INTEGER NOT NULL,
-        number_of_stars INTEGER,    -- TODO Триггер на добавление 1-10
-        rated_at DATE,              -- FIXME переделать на timestamp  
+        number_of_stars INTEGER NOT NULL,    -- TODO Триггер на добавление 1-10
+        rated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL,  -- FIXME переделать на timestamp  
         PRIMARY KEY (movie_id, user_id)
     );
 
