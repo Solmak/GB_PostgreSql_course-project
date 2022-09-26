@@ -26,12 +26,12 @@ SELECT
 						 	WHERE movies.id = movie_id
 							ORDER BY rated_at
 							LIMIT 1)
-	 ) as first_user
+	 ) AS first_user
     FROM movies
 	WHERE (SELECT COUNT(number_of_stars)
-	 	FROM stars 
-	 WHERE movie_id = movies.id
-	 GROUP BY movie_id) > 1
+	 	   FROM stars 
+	       WHERE movie_id = movies.id
+	       GROUP BY movie_id) > 1
     ORDER BY rate DESC NULLS LAST LIMIT 5;
 
 
