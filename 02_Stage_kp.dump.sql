@@ -43,6 +43,95 @@ CREATE TYPE public.genders AS ENUM (
 
 ALTER TYPE public.genders OWNER TO gb_sol;
 
+--
+-- Name: check_movie_genres_trigger(); Type: FUNCTION; Schema: public; Owner: gb_sol
+--
+
+CREATE FUNCTION public.check_movie_genres_trigger() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+DECLARE genre_row RECORD;
+BEGIN
+FOR genre_row IN
+        SELECT id FROM genres
+    LOOP 
+        RAISE NOTICE 'Incorrect genre % in array!', genre_row.id;
+        IF NOT genre_row.id = ANY (NEW.movie_genres)
+        THEN
+            RAISE EXCEPTION 'Incorrect genre % in array!', genre_row.id;
+        END IF;
+    END LOOP;
+RETURN NEW;
+END
+$$;
+
+
+ALTER FUNCTION public.check_movie_genres_trigger() OWNER TO gb_sol;
+
+--
+-- Name: check_user_stars_trigger(); Type: FUNCTION; Schema: public; Owner: gb_sol
+--
+
+CREATE FUNCTION public.check_user_stars_trigger() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+IF NEW.number_of_stars NOT BETWEEN 1 AND 10
+THEN
+    RAISE EXCEPTION 'Incorrect number of stars %! From 1 to 10, please!', NEW.number_of_stars;
+END IF;
+
+RETURN NEW;
+END
+$$;
+
+
+ALTER FUNCTION public.check_user_stars_trigger() OWNER TO gb_sol;
+
+--
+-- Name: movie_rate(integer); Type: FUNCTION; Schema: public; Owner: gb_sol
+--
+
+CREATE FUNCTION public.movie_rate(mv_id integer) RETURNS real
+    LANGUAGE sql
+    AS $$
+SELECT
+    avg(s.number_of_stars)
+FROM
+    stars s
+GROUP BY
+    s.movie_id
+HAVING 
+    s.movie_id = mv_id;
+
+$$;
+
+
+ALTER FUNCTION public.movie_rate(mv_id integer) OWNER TO gb_sol;
+
+--
+-- Name: set_movies_stars_rate(); Type: PROCEDURE; Schema: public; Owner: gb_sol
+--
+
+CREATE PROCEDURE public.set_movies_stars_rate()
+    LANGUAGE plpgsql
+    AS $$
+DECLARE movie_row RECORD;
+BEGIN
+FOR movie_row IN
+SELECT id
+FROM movies
+LOOP
+UPDATE movies  SET stars_rate  = movie_rate(movie_row.id)
+WHERE id = movie_row.id;
+END LOOP;
+COMMIT;
+END;
+$$;
+
+
+ALTER PROCEDURE public.set_movies_stars_rate() OWNER TO gb_sol;
+
 SET default_tablespace = '';
 
 SET default_table_access_method = heap;
@@ -185,6 +274,19 @@ ALTER SEQUENCE public.images_id_seq OWNED BY public.images.id;
 
 
 --
+-- Name: movie_positions; Type: TABLE; Schema: public; Owner: gb_sol
+--
+
+CREATE TABLE public.movie_positions (
+    movie_id integer NOT NULL,
+    person_id integer NOT NULL,
+    position_id integer NOT NULL
+);
+
+
+ALTER TABLE public.movie_positions OWNER TO gb_sol;
+
+--
 -- Name: movie_types; Type: TABLE; Schema: public; Owner: gb_sol
 --
 
@@ -224,7 +326,7 @@ ALTER SEQUENCE public.movie_types_id_seq OWNED BY public.movie_types.id;
 
 CREATE TABLE public.movies (
     id integer NOT NULL,
-    movie_type integer NOT NULL,
+    movie_type_id integer NOT NULL,
     title character varying(150) NOT NULL,
     original_title character varying(150) NOT NULL,
     age_restriction public.age_restrictions,
@@ -258,40 +360,6 @@ ALTER TABLE public.movies_id_seq OWNER TO gb_sol;
 --
 
 ALTER SEQUENCE public.movies_id_seq OWNED BY public.movies.id;
-
-
---
--- Name: person_positions; Type: TABLE; Schema: public; Owner: gb_sol
---
-
-CREATE TABLE public.person_positions (
-    id integer NOT NULL,
-    position_name character varying(20)
-);
-
-
-ALTER TABLE public.person_positions OWNER TO gb_sol;
-
---
--- Name: person_positions_id_seq; Type: SEQUENCE; Schema: public; Owner: gb_sol
---
-
-CREATE SEQUENCE public.person_positions_id_seq
-    AS integer
-    START WITH 1
-    INCREMENT BY 1
-    NO MINVALUE
-    NO MAXVALUE
-    CACHE 1;
-
-
-ALTER TABLE public.person_positions_id_seq OWNER TO gb_sol;
-
---
--- Name: person_positions_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: gb_sol
---
-
-ALTER SEQUENCE public.person_positions_id_seq OWNED BY public.person_positions.id;
 
 
 --
@@ -333,6 +401,40 @@ ALTER TABLE public.persons_id_seq OWNER TO gb_sol;
 --
 
 ALTER SEQUENCE public.persons_id_seq OWNED BY public.persons.id;
+
+
+--
+-- Name: positions; Type: TABLE; Schema: public; Owner: gb_sol
+--
+
+CREATE TABLE public.positions (
+    id integer NOT NULL,
+    position_name character varying(20)
+);
+
+
+ALTER TABLE public.positions OWNER TO gb_sol;
+
+--
+-- Name: positions_id_seq; Type: SEQUENCE; Schema: public; Owner: gb_sol
+--
+
+CREATE SEQUENCE public.positions_id_seq
+    AS integer
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+ALTER TABLE public.positions_id_seq OWNER TO gb_sol;
+
+--
+-- Name: positions_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: gb_sol
+--
+
+ALTER SEQUENCE public.positions_id_seq OWNED BY public.positions.id;
 
 
 --
@@ -379,8 +481,8 @@ ALTER SEQUENCE public.roles_id_seq OWNED BY public.roles.id;
 CREATE TABLE public.stars (
     movie_id integer NOT NULL,
     user_id integer NOT NULL,
-    number_of_stars integer,
-    rated_at date
+    number_of_stars integer NOT NULL,
+    rated_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP NOT NULL
 );
 
 
@@ -407,6 +509,45 @@ CREATE TABLE public.user_profiles (
 
 
 ALTER TABLE public.user_profiles OWNER TO gb_sol;
+
+--
+-- Name: rooney_cooley_actors; Type: VIEW; Schema: public; Owner: gb_sol
+--
+
+CREATE VIEW public.rooney_cooley_actors AS
+ SELECT (((p.person_name)::text || ' '::text) || (p.person_surname)::text) AS actor,
+    m.title AS movie_title,
+    r.character_name AS role,
+    s.number_of_stars AS user_rate
+   FROM ((((public.persons p
+     JOIN public.roles r ON ((r.person_id = p.id)))
+     JOIN public.stars s ON ((s.movie_id = r.movie_id)))
+     JOIN public.user_profiles up ON ((up.user_id = s.user_id)))
+     JOIN public.movies m ON ((m.id = s.movie_id)))
+  WHERE (((up.name)::text = 'Rooney'::text) AND ((up.surname)::text = 'Cooley'::text))
+  ORDER BY (((p.person_name)::text || ' '::text) || (p.person_surname)::text);
+
+
+ALTER TABLE public.rooney_cooley_actors OWNER TO gb_sol;
+
+--
+-- Name: top5; Type: VIEW; Schema: public; Owner: gb_sol
+--
+
+CREATE VIEW public.top5 AS
+ SELECT DISTINCT m.id,
+    m.title,
+    avg(s.number_of_stars) OVER (PARTITION BY m.id) AS rate,
+    count(s.movie_id) OVER (PARTITION BY m.id) AS number_of_ratings,
+    first_value((((up.name)::text || ' '::text) || (up.surname)::text)) OVER (PARTITION BY m.id ORDER BY s.rated_at) AS first_user
+   FROM ((public.movies m
+     JOIN public.stars s ON ((m.id = s.movie_id)))
+     JOIN public.user_profiles up ON ((up.user_id = s.user_id)))
+  ORDER BY (avg(s.number_of_stars) OVER (PARTITION BY m.id)) DESC
+ LIMIT 5;
+
+
+ALTER TABLE public.top5 OWNER TO gb_sol;
 
 --
 -- Name: users; Type: TABLE; Schema: public; Owner: gb_sol
@@ -595,17 +736,17 @@ ALTER TABLE ONLY public.movies ALTER COLUMN id SET DEFAULT nextval('public.movie
 
 
 --
--- Name: person_positions id; Type: DEFAULT; Schema: public; Owner: gb_sol
---
-
-ALTER TABLE ONLY public.person_positions ALTER COLUMN id SET DEFAULT nextval('public.person_positions_id_seq'::regclass);
-
-
---
 -- Name: persons id; Type: DEFAULT; Schema: public; Owner: gb_sol
 --
 
 ALTER TABLE ONLY public.persons ALTER COLUMN id SET DEFAULT nextval('public.persons_id_seq'::regclass);
+
+
+--
+-- Name: positions id; Type: DEFAULT; Schema: public; Owner: gb_sol
+--
+
+ALTER TABLE ONLY public.positions ALTER COLUMN id SET DEFAULT nextval('public.positions_id_seq'::regclass);
 
 
 --
@@ -864,6 +1005,164 @@ COPY public.images (id, image_type_id, image_url) FROM stdin;
 
 
 --
+-- Data for Name: movie_positions; Type: TABLE DATA; Schema: public; Owner: gb_sol
+--
+
+COPY public.movie_positions (movie_id, person_id, position_id) FROM stdin;
+37	81	3
+37	52	3
+47	56	4
+35	64	8
+25	38	3
+125	14	7
+138	136	9
+127	58	8
+32	57	4
+91	38	2
+147	36	4
+45	88	7
+144	111	3
+14	8	6
+42	87	6
+95	35	4
+63	22	6
+53	82	3
+61	92	2
+40	48	2
+45	25	4
+83	75	6
+6	57	9
+72	148	3
+13	128	9
+96	104	8
+98	18	3
+11	31	3
+89	97	10
+100	20	5
+4	31	4
+105	60	8
+107	56	10
+22	108	6
+74	24	5
+82	130	8
+57	23	6
+64	36	2
+66	37	8
+44	93	6
+97	106	6
+102	70	6
+105	142	6
+121	135	3
+68	31	9
+100	2	5
+11	10	8
+145	68	4
+136	53	10
+57	4	4
+7	77	3
+11	133	4
+13	120	1
+21	85	9
+41	131	10
+70	88	4
+4	96	5
+7	20	3
+85	26	10
+20	109	9
+73	104	4
+34	89	7
+148	75	8
+146	42	9
+14	132	2
+76	19	5
+114	128	8
+121	84	8
+51	99	6
+130	82	4
+73	88	10
+88	143	9
+97	3	1
+32	87	3
+28	5	7
+122	112	6
+40	4	5
+92	121	4
+53	35	5
+141	129	2
+50	85	2
+16	33	6
+148	139	6
+109	122	4
+11	35	8
+133	51	6
+45	139	5
+49	126	9
+9	14	7
+112	23	7
+149	37	8
+77	94	10
+128	100	5
+123	92	10
+81	3	9
+112	65	3
+33	126	1
+116	53	9
+99	149	2
+140	83	5
+49	76	9
+41	145	7
+75	70	3
+142	32	9
+131	63	10
+11	27	2
+111	65	9
+92	52	5
+123	39	3
+72	82	2
+6	36	3
+106	119	8
+7	110	3
+65	72	8
+136	117	6
+57	95	4
+63	139	1
+121	90	8
+137	27	7
+135	117	6
+62	98	1
+80	99	4
+38	53	2
+15	9	7
+66	103	3
+147	107	2
+10	119	4
+149	56	2
+76	57	6
+40	114	8
+65	135	10
+54	19	6
+70	142	10
+147	67	6
+78	96	8
+104	139	2
+126	75	3
+81	84	2
+25	86	3
+123	29	8
+84	133	7
+12	97	7
+116	12	6
+10	83	1
+90	122	2
+33	131	8
+135	16	7
+26	111	9
+35	136	5
+31	6	7
+\.
+
+
+--
 -- Data for Name: movie_types; Type: TABLE DATA; Schema: public; Owner: gb_sol
 --
 
@@ -879,175 +1178,157 @@ COPY public.movie_types (id, type_name) FROM stdin;
 -- Data for Name: movies; Type: TABLE DATA; Schema: public; Owner: gb_sol
 --
 
-COPY public.movies (id, movie_type, title, original_title, age_restriction, movie_genres, date_of_release, country, running_time, stars_rate) FROM stdin;
-1	3	pellentesque a, facilisis	risus. In mi	6+	{4}	2005-07-04	South Africa	01:35:44	3.6
-2	2	tempor, est	nec orci.	12+	{7}	1932-10-02	Philippines	04:06:21	3.4
-3	1	Vivamus	laoreet ipsum.	12+	{1,2,3}	1985-07-01	Philippines	06:50:49	5.3
-4	1	magna.	ut erat.	0+	{13}	1948-01-18	South Africa	07:02:18	3.7
-5	2	amet, consectetuer	non	6+	{19,22}	1957-12-08	Indonesia	06:36:02	6.2
-6	3	justo. Proin	tortor,	16+	{22}	1972-11-08	United Kingdom	22:21:59	2.9
-7	2	neque. Nullam	Sed nec	12+	{1,2,3}	1948-06-04	Australia	16:28:56	6.1
-8	3	enim consequat purus.	et,	6+	{19,22}	1972-12-29	Norway	08:00:39	4.2
+COPY public.movies (id, movie_type_id, title, original_title, age_restriction, movie_genres, date_of_release, country, running_time, stars_rate) FROM stdin;
+2	2	tempor, est	nec orci.	12+	{7,2,3}	1932-10-02	Philippines	04:06:21	6.6666665
+1	3	pellentesque a, facilisis	risus. In mi	6+	{4}	2005-07-04	South Africa	01:35:44	\N
+3	1	Vivamus	laoreet ipsum.	12+	{1,2,3}	1985-07-01	Philippines	06:50:49	5.75
+4	1	magna.	ut erat.	0+	{13}	1948-01-18	South Africa	07:02:18	3.3333333
+5	2	amet, consectetuer	non	6+	{19,22}	1957-12-08	Indonesia	06:36:02	5
+6	3	justo. Proin	tortor,	16+	{22}	1972-11-08	United Kingdom	22:21:59	5.2
+7	2	neque. Nullam	Sed nec	12+	{1,2,3}	1948-06-04	Australia	16:28:56	3.6666667
+8	3	enim consequat purus.	et,	6+	{19,22}	1972-12-29	Norway	08:00:39	7.3333335
 9	3	convallis est,	mauris	6+	{26}	1934-03-10	Norway	12:44:43	3.4
-10	2	Proin eget odio.	mauris a	12+	{4}	1977-08-31	Brazil	21:05:31	7.2
-11	2	luctus sit	penatibus	12+	{27,20}	1993-09-03	Nigeria	21:34:22	7.1
-12	3	velit	condimentum eget, volutpat	12+	{12,5}	1991-09-10	Austria	12:44:57	7.9
-13	3	Quisque	in aliquet lobortis,	0+	{4}	2009-04-16	Spain	07:05:23	7
-14	1	arcu. Vestibulum	eget, venenatis	0+	{11,9}	1939-09-24	Costa Rica	01:31:54	6.9
-15	1	risus. Donec egestas.	risus. Duis a	6+	{15}	1989-05-31	Ireland	15:57:56	7.2
-16	3	pharetra. Quisque	semper	6+	{11,3}	1953-10-29	Sweden	17:30:50	6.2
-17	1	volutpat. Nulla	tempor augue ac	6+	{1}	1939-05-05	New Zealand	16:21:12	5.6
-18	3	ligula. Nullam	semper cursus. Integer	6+	{16}	2013-03-09	United Kingdom	09:58:41	5.2
-19	4	purus gravida sagittis.	rutrum magna.	0+	{9}	1987-02-18	South Africa	20:02:00	4
-20	3	montes, nascetur	ultrices. Duis volutpat	12+	{12}	1952-09-10	Norway	08:30:17	6.8
-21	2	quis	pede.	6+	{1,5,9}	1951-02-11	Canada	17:53:28	7.3
-22	2	Nam interdum	luctus	0+	{19}	2002-08-05	Austria	13:59:40	5.6
-23	1	lectus pede, ultrices	mauris id	0+	{12}	2009-11-28	Sweden	11:23:59	4.7
-24	3	Nam tempor	lacus.	12+	{11,9}	2008-07-11	Sweden	17:07:54	4
-25	3	risus. In	id magna	12+	{21,23}	1939-09-07	Poland	02:57:25	4.4
-26	3	fringilla ornare	nonummy ac,	12+	{2}	1976-08-04	Poland	19:24:28	6.2
-27	3	Nullam	erat vel pede	0+	{1,2,3}	1978-10-10	Canada	06:42:34	3.8
-28	4	est	ligula	6+	{21}	2005-09-02	Singapore	11:07:35	5
-29	2	lobortis quis, pede.	leo. Cras vehicula	6+	{23}	1940-06-08	Russian Federation	17:24:48	4.1
-30	4	auctor ullamcorper,	ridiculus mus.	16+	{2}	1955-08-05	South Africa	09:00:50	4.2
-31	2	ullamcorper. Duis	auctor, velit eget	0+	{1}	2015-09-24	New Zealand	11:07:33	3.9
-32	2	velit. Pellentesque	eu, accumsan	6+	{21}	2014-06-02	Colombia	18:56:15	5.7
-33	3	faucibus. Morbi	sagittis semper. Nam	12+	{6}	1940-06-09	France	21:25:38	6.1
-34	1	luctus et	urna et	12+	{15}	1978-06-14	China	00:59:07	6.7
-35	3	nulla	ac, fermentum vel,	6+	{17}	1973-09-22	Germany	05:50:18	5.8
-36	1	sem,	non enim. Mauris	16+	{10}	1934-05-20	Netherlands	21:51:07	3.9
-37	3	amet, consectetuer	tristique	6+	{2,17}	1949-11-30	Philippines	10:03:51	6.1
-38	1	pretium et,	lacus pede	6+	{23}	1936-11-27	Brazil	11:39:18	4
-39	1	Sed	Quisque ac	0+	{7}	1986-11-25	Nigeria	09:35:27	2.1
-40	2	mattis. Integer eu	non, feugiat nec,	6+	{24}	1949-07-01	Netherlands	07:48:50	6.2
-41	2	lacus. Mauris	Donec luctus aliquet	12+	{2}	1990-12-28	South Africa	13:36:28	2.7
-42	3	consectetuer adipiscing	consectetuer mauris	16+	{21}	2019-01-18	Norway	06:00:00	4.9
-43	3	Duis risus	vulputate, nisi	6+	{15}	1974-07-09	India	16:30:36	1.8
-44	4	rutrum	nulla. Cras	0+	{25}	1960-12-08	Sweden	18:03:57	4.5
-45	1	elit. Curabitur	Integer mollis. Integer	16+	{18}	2005-01-23	France	08:14:04	6.8
-46	4	tellus	Cras vulputate	6+	{10}	2006-02-18	Italy	22:22:57	6.8
-47	4	et magnis dis	ipsum. Suspendisse	6+	{13}	1969-01-10	Chile	18:07:43	1.7
-48	2	ligula	egestas. Aliquam	12+	{1}	1952-06-06	Peru	23:25:05	3.6
-49	4	ut erat. Sed	et	6+	{28}	1946-02-16	Norway	15:32:44	4.7
-50	3	Aenean eget	dignissim pharetra. Nam	0+	{6}	1943-02-13	Costa Rica	23:20:22	5.1
-51	4	non massa non	ante.	12+	{8}	1950-10-22	Germany	19:12:46	5.7
-52	3	nec, malesuada	In mi	0+	{17}	1988-06-26	Indonesia	00:04:22	4.3
-53	3	hymenaeos. Mauris	sagittis semper.	6+	{13,7}	2003-08-26	Nigeria	18:48:02	5
-54	1	ac mattis	at, nisi.	6+	{4}	1961-02-12	Spain	10:36:59	7.4
-55	3	ligula. Nullam	non, feugiat nec,	6+	{21,23}	1953-07-15	Spain	08:43:32	7.1
-56	2	Quisque	magnis dis parturient	6+	{28}	1996-06-02	Mexico	03:14:35	7.6
-57	1	Nunc	amet, consectetuer	6+	{1,5,9}	2018-07-15	Canada	04:01:47	6.8
-58	3	penatibus	Donec tempus, lorem	6+	{17}	2002-01-17	Turkey	19:58:21	8
-59	2	Vivamus	arcu. Vestibulum ante	0+	{14}	1999-06-03	Costa Rica	00:18:09	5.5
-60	2	et pede.	ipsum. Suspendisse non	12+	{23}	1998-03-24	Peru	13:48:57	3.1
-61	2	sem mollis	lacus. Ut	16+	{3}	2017-04-17	Italy	19:36:49	5.6
-62	3	vitae nibh.	eget, volutpat	0+	{17}	1971-11-11	France	10:09:22	5
-63	1	mauris.	quam dignissim pharetra.	0+	{6}	1949-12-09	China	07:00:49	6
-64	1	venenatis vel,	amet ornare lectus	16+	{27,20}	1998-01-27	Peru	20:28:19	4
-65	3	Integer eu	at augue	12+	{5}	1957-01-07	South Korea	11:53:07	5.6
-66	3	Integer	Cras	12+	{28}	2005-11-10	New Zealand	23:27:39	1.3
-67	3	Morbi vehicula. Pellentesque	Phasellus	0+	{12,5}	1985-06-25	New Zealand	17:11:02	6.2
-68	4	Nunc mauris.	Vivamus	6+	{17}	2013-05-25	Italy	18:48:47	1.7
-69	3	sem ut	ut erat. Sed	12+	{11,9}	2012-01-26	Australia	04:14:14	3
-70	2	bibendum sed,	purus ac	12+	{12}	1992-01-17	Spain	06:28:55	7.5
-71	3	Mauris quis	nec, diam. Duis	0+	{12}	1940-02-23	United Kingdom	11:45:41	4.1
-72	4	non, lacinia	consectetuer adipiscing	12+	{23}	1935-07-04	Chile	19:21:07	2.9
-73	3	diam luctus	Donec est.	12+	{17}	1966-03-04	Spain	05:10:19	4.9
-74	2	Etiam imperdiet dictum	dictum.	6+	{7}	1941-04-18	Sweden	17:03:10	7.4
-75	4	mollis nec,	elementum	12+	{4}	1993-11-16	Indonesia	20:49:00	7.6
-76	2	egestas. Aliquam	sit amet	12+	{23}	1963-11-20	United States	02:58:00	5.4
-77	3	enim non	hendrerit	12+	{21,23}	2016-06-25	Ireland	05:35:29	4.7
-78	2	ut,	egestas nunc	12+	{14}	1945-08-05	Russian Federation	09:11:26	4.7
-79	2	Maecenas libero	lobortis risus. In	12+	{14}	1990-11-14	Pakistan	00:27:36	5.6
-80	3	sem. Pellentesque	In	0+	{1,5,9}	1969-03-07	Chile	11:17:36	4
-81	2	tincidunt,	pede, nonummy ut,	16+	{14}	2005-03-27	France	04:33:51	7.2
-82	2	Nunc sed	penatibus	16+	{13}	1984-08-19	Brazil	02:57:04	6.6
-83	2	sit	cubilia	16+	{19,22}	1946-11-17	Vietnam	01:38:10	4.5
-84	2	dolor, tempus	vel quam	12+	{12}	2016-11-13	Canada	03:18:26	6.5
-85	4	Curabitur ut	suscipit, est	12+	{24}	1981-09-29	Belgium	00:25:03	4.1
-86	3	vitae aliquam	non, cursus	16+	{3}	2004-05-14	Nigeria	10:09:14	4.2
-87	3	eu augue porttitor	dui, nec	0+	{14}	1989-12-04	Ireland	14:56:56	5.7
-88	2	facilisis lorem	Donec porttitor	12+	{17}	1951-03-24	Netherlands	18:41:48	4.3
-89	3	In	aliquam iaculis, lacus	16+	{16,3}	1941-11-15	South Africa	17:46:34	7.4
-90	4	mauris	id, ante. Nunc	6+	{14}	2004-06-24	Pakistan	09:44:14	3.6
-91	1	consequat, lectus sit	tortor at	6+	{15}	1955-09-10	Turkey	11:22:51	6.3
-92	3	non, sollicitudin	Integer mollis.	6+	{1,12}	1985-07-13	Belgium	01:31:14	4.7
-93	4	vel pede	justo.	12+	{7}	1936-10-06	Costa Rica	06:01:12	4.6
-94	4	ipsum. Phasellus vitae	molestie	6+	{6}	2002-01-31	Spain	00:17:50	5
-95	2	odio. Phasellus	fermentum	16+	{11}	1954-05-28	Ireland	11:13:04	3.4
-96	3	In at	sapien, gravida non,	12+	{12}	1955-06-23	Turkey	01:21:54	3.2
-97	4	egestas	erat, eget tincidunt	12+	{20}	1961-06-22	Chile	06:32:42	3.2
-98	3	congue	tellus id nunc	12+	{27}	1998-09-17	South Africa	23:56:39	5.7
-99	1	quis,	pharetra sed,	12+	{1,2,3}	2012-09-29	Ireland	05:01:01	3.3
-100	1	Mauris magna. Duis	egestas. Sed pharetra,	6+	{4}	1986-09-22	France	14:19:24	5.4
-101	3	elit.	eu	16+	{5}	1940-10-14	Singapore	01:48:13	4.5
-102	2	a, enim. Suspendisse	Pellentesque ut	6+	{13,7}	1955-07-25	Russian Federation	00:22:35	6
-103	4	ornare sagittis felis.	Duis gravida.	16+	{16,2}	1956-08-24	South Korea	16:55:22	4.7
-104	2	leo,	non arcu.	12+	{1,2,3}	1970-01-26	Brazil	23:45:28	5.1
-105	2	magnis dis parturient	ad litora	12+	{12}	1968-11-16	Russian Federation	07:09:50	7.9
-106	4	ut lacus.	eu turpis.	16+	{8}	1938-10-02	Brazil	19:15:01	3.8
-107	2	tortor nibh	dictum. Phasellus	12+	{5}	1980-12-02	Nigeria	14:56:50	4.3
-108	2	dolor. Nulla semper	amet massa.	6+	{4,28}	1944-01-11	United States	20:02:43	3.4
-109	3	Mauris	eu nibh	6+	{13}	1977-08-09	Colombia	02:28:21	3.9
-110	2	neque vitae	tristique pellentesque,	0+	{14}	2019-09-01	Nigeria	20:01:51	3
-111	4	amet metus.	sit amet	16+	{12}	2012-10-19	Canada	16:00:19	5.3
-112	2	eu, eleifend	varius et,	12+	{1,2,3}	1988-11-05	Poland	03:16:18	4.6
-113	3	dis parturient montes,	semper tellus	0+	{13}	1976-05-25	Ukraine	10:11:24	4.4
-114	2	sem. Pellentesque	tellus non magna.	0+	{19}	1987-01-28	Indonesia	09:41:24	3.9
-115	2	diam luctus	montes, nascetur	16+	{4}	1957-01-05	Canada	18:29:20	4.6
-116	3	Cras pellentesque.	Ut	12+	{25}	1939-11-22	Sweden	13:59:08	3.7
-117	4	est, mollis	Sed nunc est,	6+	{11,3}	1954-01-15	United Kingdom	13:06:41	5.4
-118	3	conubia nostra,	Nullam enim.	12+	{28}	2005-12-03	South Korea	00:46:49	5.9
-119	2	dolor	consectetuer adipiscing	12+	{17}	1988-08-01	Vietnam	02:55:58	6.9
-120	1	arcu	elit, pretium	6+	{14}	1946-06-12	Vietnam	01:46:32	3.1
-121	2	luctus	at	12+	{18}	2017-12-15	Poland	14:24:11	5.1
-122	1	nec,	Etiam	6+	{9}	1962-07-30	Netherlands	20:52:31	3.8
-123	3	a neque.	interdum. Nunc	12+	{8}	1998-09-03	Canada	20:59:06	4.2
-124	3	varius orci,	nunc.	12+	{1,12}	2001-04-02	India	01:24:01	5.9
-125	2	Aliquam nec enim.	Mauris	6+	{23}	2021-06-17	United Kingdom	19:15:10	4
-126	3	pede, ultrices	vel, vulputate	6+	{1,5,9}	1969-04-23	Turkey	15:37:14	6.2
-127	3	dictum. Proin	aliquam	0+	{21,23}	1956-11-20	Singapore	05:26:22	7.5
-128	4	nibh. Quisque	viverra. Maecenas iaculis	12+	{7}	1984-07-09	Sweden	05:10:22	4.8
-129	2	quis turpis	sed leo. Cras	12+	{27,20}	1978-05-10	South Korea	10:57:40	5.8
-130	1	ac	erat nonummy ultricies	6+	{24}	1933-06-21	Netherlands	19:37:07	2
-131	4	mollis	Aliquam erat	12+	{16,22}	2001-10-22	Vietnam	22:25:33	4
-132	3	faucibus orci luctus	neque. Sed eget	6+	{13}	2011-04-22	Australia	17:50:58	6.8
-133	3	Sed	metus. Vivamus	12+	{13,7}	2018-08-12	Pakistan	17:56:19	4.4
-134	3	et ultrices posuere	malesuada malesuada.	16+	{23}	1934-11-03	Belgium	10:36:41	4.4
-135	2	quis turpis	sem. Pellentesque	12+	{8}	1937-06-28	Brazil	03:28:52	6.4
-136	4	tempor lorem,	Ut semper	12+	{11}	1970-03-16	United States	14:32:28	3.7
-137	1	nisl. Quisque	magnis dis	12+	{23}	1962-04-10	Costa Rica	17:39:32	2.6
-138	2	auctor, velit eget	a felis	16+	{1,4,8}	1968-11-25	Australia	11:51:13	3.3
-139	4	Donec feugiat	ac,	12+	{27}	1999-05-09	Indonesia	16:57:36	5.9
-140	3	erat, in	ipsum. Phasellus	12+	{1,9}	1970-03-10	Pakistan	15:34:07	3.7
-141	4	non ante	cursus luctus,	6+	{21}	1966-06-22	Belgium	00:52:57	3.7
-142	1	lobortis tellus	fringilla, porttitor vulputate,	12+	{6}	1940-08-06	Netherlands	14:40:32	6.5
-143	2	et ultrices posuere	posuere cubilia Curae	12+	{15}	1997-12-20	Italy	06:43:09	7.5
-144	3	Quisque	velit	6+	{17}	1998-05-01	Singapore	10:14:51	4.1
-145	2	dolor. Donec	dictum cursus. Nunc	6+	{28}	1996-04-10	Norway	00:55:00	4.5
-146	4	nisi.	quis urna.	12+	{12}	1992-06-25	Chile	07:51:25	8.5
-147	2	varius	Nulla	12+	{27,20}	1969-03-28	Netherlands	07:32:07	5.5
-148	2	et pede. Nunc	varius et, euismod	6+	{28}	1991-09-14	Turkey	21:44:47	6.3
-149	3	Donec	Curae Phasellus	12+	{19}	1956-03-17	Norway	15:10:22	3.4
-150	3	elit, dictum	Vivamus	12+	{3}	2014-01-01	Italy	15:16:16	4.8
-\.
-
-
---
--- Data for Name: person_positions; Type: TABLE DATA; Schema: public; Owner: gb_sol
---
-
-COPY public.person_positions (id, position_name) FROM stdin;
-1	Актер
-2	Режисер
-3	Продюсер
-4	Оператор
-5	Художник
-6	Гример
-7	Каскадер
-8	Художник по костюмам
-9	Светооператор
-10	Консультант
+10	2	Proin eget odio.	mauris a	12+	{4}	1977-08-31	Brazil	21:05:31	6.6666665
+11	2	luctus sit	penatibus	12+	{27,20}	1993-09-03	Nigeria	21:34:22	3.8
+12	3	velit	condimentum eget, volutpat	12+	{12,5}	1991-09-10	Austria	12:44:57	6.1666665
+13	3	Quisque	in aliquet lobortis,	0+	{4}	2009-04-16	Spain	07:05:23	\N
+14	1	arcu. Vestibulum	eget, venenatis	0+	{11,9}	1939-09-24	Costa Rica	01:31:54	4.75
+15	1	risus. Donec egestas.	risus. Duis a	6+	{15}	1989-05-31	Ireland	15:57:56	4
+16	3	pharetra. Quisque	semper	6+	{11,3}	1953-10-29	Sweden	17:30:50	6.3333335
+17	1	volutpat. Nulla	tempor augue ac	6+	{1}	1939-05-05	New Zealand	16:21:12	7
+18	3	ligula. Nullam	semper cursus. Integer	6+	{16}	2013-03-09	United Kingdom	09:58:41	5.25
+19	4	purus gravida sagittis.	rutrum magna.	0+	{9}	1987-02-18	South Africa	20:02:00	1
+20	3	montes, nascetur	ultrices. Duis volutpat	12+	{12}	1952-09-10	Norway	08:30:17	7
+21	2	quis	pede.	6+	{1,5,9}	1951-02-11	Canada	17:53:28	5
+22	2	Nam interdum	luctus	0+	{19}	2002-08-05	Austria	13:59:40	\N
+23	1	lectus pede, ultrices	mauris id	0+	{12}	2009-11-28	Sweden	11:23:59	5
+24	3	Nam tempor	lacus.	12+	{11,9}	2008-07-11	Sweden	17:07:54	6.3333335
+25	3	risus. In	id magna	12+	{21,23}	1939-09-07	Poland	02:57:25	6
+26	3	fringilla ornare	nonummy ac,	12+	{2}	1976-08-04	Poland	19:24:28	6.5
+27	3	Nullam	erat vel pede	0+	{1,2,3}	1978-10-10	Canada	06:42:34	8
+28	4	est	ligula	6+	{21}	2005-09-02	Singapore	11:07:35	3.8
+29	2	lobortis quis, pede.	leo. Cras vehicula	6+	{23}	1940-06-08	Russian Federation	17:24:48	3
+30	4	auctor ullamcorper,	ridiculus mus.	16+	{2}	1955-08-05	South Africa	09:00:50	3
+31	2	ullamcorper. Duis	auctor, velit eget	0+	{1}	2015-09-24	New Zealand	11:07:33	5.5
+32	2	velit. Pellentesque	eu, accumsan	6+	{21}	2014-06-02	Colombia	18:56:15	6
+33	3	faucibus. Morbi	sagittis semper. Nam	12+	{6}	1940-06-09	France	21:25:38	5.6666665
+34	1	luctus et	urna et	12+	{15}	1978-06-14	China	00:59:07	5
+35	3	nulla	ac, fermentum vel,	6+	{17}	1973-09-22	Germany	05:50:18	3.5
+36	1	sem,	non enim. Mauris	16+	{10}	1934-05-20	Netherlands	21:51:07	9.666667
+37	3	amet, consectetuer	tristique	6+	{2,17}	1949-11-30	Philippines	10:03:51	5.6666665
+38	1	pretium et,	lacus pede	6+	{23}	1936-11-27	Brazil	11:39:18	4.5
+39	1	Sed	Quisque ac	0+	{7}	1986-11-25	Nigeria	09:35:27	4.5
+40	2	mattis. Integer eu	non, feugiat nec,	6+	{24}	1949-07-01	Netherlands	07:48:50	5
+41	2	lacus. Mauris	Donec luctus aliquet	12+	{2}	1990-12-28	South Africa	13:36:28	6.4
+42	3	consectetuer adipiscing	consectetuer mauris	16+	{21}	2019-01-18	Norway	06:00:00	6.3333335
+43	3	Duis risus	vulputate, nisi	6+	{15}	1974-07-09	India	16:30:36	7.3333335
+44	4	rutrum	nulla. Cras	0+	{25}	1960-12-08	Sweden	18:03:57	7.3333335
+45	1	elit. Curabitur	Integer mollis. Integer	16+	{18}	2005-01-23	France	08:14:04	3.5
+46	4	tellus	Cras vulputate	6+	{10}	2006-02-18	Italy	22:22:57	2.5
+47	4	et magnis dis	ipsum. Suspendisse	6+	{13}	1969-01-10	Chile	18:07:43	5
+48	2	ligula	egestas. Aliquam	12+	{1}	1952-06-06	Peru	23:25:05	6
+49	4	ut erat. Sed	et	6+	{28}	1946-02-16	Norway	15:32:44	5
+50	3	Aenean eget	dignissim pharetra. Nam	0+	{6}	1943-02-13	Costa Rica	23:20:22	8
+51	4	non massa non	ante.	12+	{8}	1950-10-22	Germany	19:12:46	6.5
+52	3	nec, malesuada	In mi	0+	{17}	1988-06-26	Indonesia	00:04:22	5.6
+53	3	hymenaeos. Mauris	sagittis semper.	6+	{13,7}	2003-08-26	Nigeria	18:48:02	5.6666665
+54	1	ac mattis	at, nisi.	6+	{4}	1961-02-12	Spain	10:36:59	4
+55	3	ligula. Nullam	non, feugiat nec,	6+	{21,23}	1953-07-15	Spain	08:43:32	7
+56	2	Quisque	magnis dis parturient	6+	{28}	1996-06-02	Mexico	03:14:35	7
+57	1	Nunc	amet, consectetuer	6+	{1,5,9}	2018-07-15	Canada	04:01:47	7.3333335
+58	3	penatibus	Donec tempus, lorem	6+	{17}	2002-01-17	Turkey	19:58:21	5.75
+59	2	Vivamus	arcu. Vestibulum ante	0+	{14}	1999-06-03	Costa Rica	00:18:09	4
+60	2	et pede.	ipsum. Suspendisse non	12+	{23}	1998-03-24	Peru	13:48:57	4.285714
+61	2	sem mollis	lacus. Ut	16+	{3}	2017-04-17	Italy	19:36:49	4.4
+62	3	vitae nibh.	eget, volutpat	0+	{17}	1971-11-11	France	10:09:22	6
+63	1	mauris.	quam dignissim pharetra.	0+	{6}	1949-12-09	China	07:00:49	6.4
+64	1	venenatis vel,	amet ornare lectus	16+	{27,20}	1998-01-27	Peru	20:28:19	4.8333335
+65	3	Integer eu	at augue	12+	{5}	1957-01-07	South Korea	11:53:07	6.3333335
+66	3	Integer	Cras	12+	{28}	2005-11-10	New Zealand	23:27:39	3
+67	3	Morbi vehicula. Pellentesque	Phasellus	0+	{12,5}	1985-06-25	New Zealand	17:11:02	6.25
+68	4	Nunc mauris.	Vivamus	6+	{17}	2013-05-25	Italy	18:48:47	7.6666665
+69	3	sem ut	ut erat. Sed	12+	{11,9}	2012-01-26	Australia	04:14:14	5.75
+70	2	bibendum sed,	purus ac	12+	{12}	1992-01-17	Spain	06:28:55	7
+71	3	Mauris quis	nec, diam. Duis	0+	{12}	1940-02-23	United Kingdom	11:45:41	3.3333333
+72	4	non, lacinia	consectetuer adipiscing	12+	{23}	1935-07-04	Chile	19:21:07	5.5
+73	3	diam luctus	Donec est.	12+	{17}	1966-03-04	Spain	05:10:19	4.8
+74	2	Etiam imperdiet dictum	dictum.	6+	{7}	1941-04-18	Sweden	17:03:10	5.6
+75	4	mollis nec,	elementum	12+	{4}	1993-11-16	Indonesia	20:49:00	5.8
+76	2	egestas. Aliquam	sit amet	12+	{23}	1963-11-20	United States	02:58:00	6.3333335
+77	3	enim non	hendrerit	12+	{21,23}	2016-06-25	Ireland	05:35:29	5.2
+78	2	ut,	egestas nunc	12+	{14}	1945-08-05	Russian Federation	09:11:26	6.25
+79	2	Maecenas libero	lobortis risus. In	12+	{14}	1990-11-14	Pakistan	00:27:36	\N
+80	3	sem. Pellentesque	In	0+	{1,5,9}	1969-03-07	Chile	11:17:36	6
+81	2	tincidunt,	pede, nonummy ut,	16+	{14}	2005-03-27	France	04:33:51	6.6
+82	2	Nunc sed	penatibus	16+	{13}	1984-08-19	Brazil	02:57:04	4
+83	2	sit	cubilia	16+	{19,22}	1946-11-17	Vietnam	01:38:10	5.3333335
+84	2	dolor, tempus	vel quam	12+	{12}	2016-11-13	Canada	03:18:26	4
+85	4	Curabitur ut	suscipit, est	12+	{24}	1981-09-29	Belgium	00:25:03	5
+86	3	vitae aliquam	non, cursus	16+	{3}	2004-05-14	Nigeria	10:09:14	6.8333335
+87	3	eu augue porttitor	dui, nec	0+	{14}	1989-12-04	Ireland	14:56:56	3
+88	2	facilisis lorem	Donec porttitor	12+	{17}	1951-03-24	Netherlands	18:41:48	\N
+89	3	In	aliquam iaculis, lacus	16+	{16,3}	1941-11-15	South Africa	17:46:34	5
+90	4	mauris	id, ante. Nunc	6+	{14}	2004-06-24	Pakistan	09:44:14	6.8
+91	1	consequat, lectus sit	tortor at	6+	{15}	1955-09-10	Turkey	11:22:51	\N
+92	3	non, sollicitudin	Integer mollis.	6+	{1,12}	1985-07-13	Belgium	01:31:14	5
+93	4	vel pede	justo.	12+	{7}	1936-10-06	Costa Rica	06:01:12	3.75
+94	4	ipsum. Phasellus vitae	molestie	6+	{6}	2002-01-31	Spain	00:17:50	8.666667
+95	2	odio. Phasellus	fermentum	16+	{11}	1954-05-28	Ireland	11:13:04	6
+96	3	In at	sapien, gravida non,	12+	{12}	1955-06-23	Turkey	01:21:54	7.25
+97	4	egestas	erat, eget tincidunt	12+	{20}	1961-06-22	Chile	06:32:42	5
+98	3	congue	tellus id nunc	12+	{27}	1998-09-17	South Africa	23:56:39	5.6
+99	1	quis,	pharetra sed,	12+	{1,2,3}	2012-09-29	Ireland	05:01:01	3.6666667
+100	1	Mauris magna. Duis	egestas. Sed pharetra,	6+	{4}	1986-09-22	France	14:19:24	5.2
+101	3	elit.	eu	16+	{5}	1940-10-14	Singapore	01:48:13	5
+102	2	a, enim. Suspendisse	Pellentesque ut	6+	{13,7}	1955-07-25	Russian Federation	00:22:35	4.714286
+103	4	ornare sagittis felis.	Duis gravida.	16+	{16,2}	1956-08-24	South Korea	16:55:22	4
+104	2	leo,	non arcu.	12+	{1,2,3}	1970-01-26	Brazil	23:45:28	4.5
+105	2	magnis dis parturient	ad litora	12+	{12}	1968-11-16	Russian Federation	07:09:50	2
+106	4	ut lacus.	eu turpis.	16+	{8}	1938-10-02	Brazil	19:15:01	6
+107	2	tortor nibh	dictum. Phasellus	12+	{5}	1980-12-02	Nigeria	14:56:50	6
+108	2	dolor. Nulla semper	amet massa.	6+	{4,28}	1944-01-11	United States	20:02:43	1
+109	3	Mauris	eu nibh	6+	{13}	1977-08-09	Colombia	02:28:21	4
+110	2	neque vitae	tristique pellentesque,	0+	{14}	2019-09-01	Nigeria	20:01:51	5
+111	4	amet metus.	sit amet	16+	{12}	2012-10-19	Canada	16:00:19	4.5
+112	2	eu, eleifend	varius et,	12+	{1,2,3}	1988-11-05	Poland	03:16:18	8.5
+113	3	dis parturient montes,	semper tellus	0+	{13}	1976-05-25	Ukraine	10:11:24	4.75
+114	2	sem. Pellentesque	tellus non magna.	0+	{19}	1987-01-28	Indonesia	09:41:24	5.75
+115	2	diam luctus	montes, nascetur	16+	{4}	1957-01-05	Canada	18:29:20	5.8333335
+116	3	Cras pellentesque.	Ut	12+	{25}	1939-11-22	Sweden	13:59:08	2.5
+117	4	est, mollis	Sed nunc est,	6+	{11,3}	1954-01-15	United Kingdom	13:06:41	2.5
+118	3	conubia nostra,	Nullam enim.	12+	{28}	2005-12-03	South Korea	00:46:49	4.875
+119	2	dolor	consectetuer adipiscing	12+	{17}	1988-08-01	Vietnam	02:55:58	5
+120	1	arcu	elit, pretium	6+	{14}	1946-06-12	Vietnam	01:46:32	4.25
+121	2	luctus	at	12+	{18}	2017-12-15	Poland	14:24:11	7.1666665
+122	1	nec,	Etiam	6+	{9}	1962-07-30	Netherlands	20:52:31	5.2
+123	3	a neque.	interdum. Nunc	12+	{8}	1998-09-03	Canada	20:59:06	3.6666667
+124	3	varius orci,	nunc.	12+	{1,12}	2001-04-02	India	01:24:01	3.5
+125	2	Aliquam nec enim.	Mauris	6+	{23}	2021-06-17	United Kingdom	19:15:10	6.6
+126	3	pede, ultrices	vel, vulputate	6+	{1,5,9}	1969-04-23	Turkey	15:37:14	6.8333335
+127	3	dictum. Proin	aliquam	0+	{21,23}	1956-11-20	Singapore	05:26:22	7.2
+128	4	nibh. Quisque	viverra. Maecenas iaculis	12+	{7}	1984-07-09	Sweden	05:10:22	7
+129	2	quis turpis	sed leo. Cras	12+	{27,20}	1978-05-10	South Korea	10:57:40	5.2
+130	1	ac	erat nonummy ultricies	6+	{24}	1933-06-21	Netherlands	19:37:07	7.6666665
+131	4	mollis	Aliquam erat	12+	{16,22}	2001-10-22	Vietnam	22:25:33	5
+132	3	faucibus orci luctus	neque. Sed eget	6+	{13}	2011-04-22	Australia	17:50:58	\N
+133	3	Sed	metus. Vivamus	12+	{13,7}	2018-08-12	Pakistan	17:56:19	3
+134	3	et ultrices posuere	malesuada malesuada.	16+	{23}	1934-11-03	Belgium	10:36:41	6.25
+135	2	quis turpis	sem. Pellentesque	12+	{8}	1937-06-28	Brazil	03:28:52	6
+136	4	tempor lorem,	Ut semper	12+	{11}	1970-03-16	United States	14:32:28	3
+137	1	nisl. Quisque	magnis dis	12+	{23}	1962-04-10	Costa Rica	17:39:32	5.5
+138	2	auctor, velit eget	a felis	16+	{1,4,8}	1968-11-25	Australia	11:51:13	8.666667
+139	4	Donec feugiat	ac,	12+	{27}	1999-05-09	Indonesia	16:57:36	4.25
+140	3	erat, in	ipsum. Phasellus	12+	{1,9}	1970-03-10	Pakistan	15:34:07	\N
+141	4	non ante	cursus luctus,	6+	{21}	1966-06-22	Belgium	00:52:57	9.5
+142	1	lobortis tellus	fringilla, porttitor vulputate,	12+	{6}	1940-08-06	Netherlands	14:40:32	4
+143	2	et ultrices posuere	posuere cubilia Curae	12+	{15}	1997-12-20	Italy	06:43:09	5.75
+144	3	Quisque	velit	6+	{17}	1998-05-01	Singapore	10:14:51	6.3333335
+145	2	dolor. Donec	dictum cursus. Nunc	6+	{28}	1996-04-10	Norway	00:55:00	6
+146	4	nisi.	quis urna.	12+	{12}	1992-06-25	Chile	07:51:25	4.3333335
+147	2	varius	Nulla	12+	{27,20}	1969-03-28	Netherlands	07:32:07	\N
+148	2	et pede. Nunc	varius et, euismod	6+	{28}	1991-09-14	Turkey	21:44:47	7.25
+149	3	Donec	Curae Phasellus	12+	{19}	1956-03-17	Norway	15:10:22	2
+150	3	elit, dictum	Vivamus	12+	{3}	2014-01-01	Italy	15:16:16	2
 \.
 
 
@@ -1206,6 +1487,24 @@ COPY public.persons (id, person_name, person_surname, person_middle_name, person
 148	Murphy	Foreman	Jermaine	Aaron U. Pollard	\N	1993-10-20	210	{2}
 149	Kirsten	Steele	Rhona	Iliana P. Bartlett	\N	1990-02-01	150	{8}
 150	Shea	Barron	Anastasia	Nathan U. Burke	\N	1970-03-14	145	{4}
+\.
+
+
+--
+-- Data for Name: positions; Type: TABLE DATA; Schema: public; Owner: gb_sol
+--
+
+COPY public.positions (id, position_name) FROM stdin;
+1	Актер
+2	Режисер
+3	Продюсер
+4	Оператор
+5	Художник
+6	Гример
+7	Каскадер
+8	Художник по костюмам
+9	Светооператор
+10	Консультант
 \.
 
 
@@ -1522,406 +1821,503 @@ COPY public.roles (id, movie_id, person_id, character_name, is_main_role) FROM s
 --
 
 COPY public.stars (movie_id, user_id, number_of_stars, rated_at) FROM stdin;
-88	33	1	2010-11-01
-109	13	4	2020-04-19
-141	17	4	2013-04-30
-39	52	8	2016-06-23
-86	39	4	2017-06-06
-95	133	5	2013-02-24
-81	5	5	2020-06-28
-84	107	2	2016-09-21
-41	58	2	2011-12-21
-56	51	4	2021-12-26
-72	33	3	2021-07-02
-54	39	8	2022-02-18
-106	73	1	2021-12-27
-30	137	4	2016-07-03
-23	49	4	2015-04-07
-101	65	2	2020-08-30
-19	24	8	2014-12-31
-140	38	1	2012-08-25
-19	37	3	2013-09-04
-131	82	4	2020-09-12
-47	47	3	2023-06-12
-55	144	2	2013-05-24
-92	146	2	2014-11-09
-139	138	3	2011-11-16
-86	115	4	2021-06-23
-9	10	8	2014-06-08
-54	121	5	2014-01-10
-92	61	9	2023-03-26
-137	123	2	2012-01-30
-103	133	8	2012-10-28
-112	128	4	2021-11-03
-50	104	9	2014-01-02
-67	117	5	2022-01-08
-132	73	3	2017-10-20
-132	60	9	2015-09-04
-119	71	4	2014-01-16
-6	29	3	2020-07-16
-86	9	1	2015-03-18
-10	108	7	2017-11-06
-83	74	9	2015-10-20
-20	128	2	2012-06-17
-147	148	4	2020-04-05
-89	27	2	2017-09-03
-97	145	6	2016-06-30
-36	109	1	2011-11-05
-95	148	1	2016-10-17
-17	89	6	2019-05-12
-20	140	6	2018-07-31
-16	54	2	2012-07-21
-102	54	2	2020-02-18
-147	138	8	2022-08-03
-124	144	7	2022-02-22
-106	138	7	2015-01-19
-147	10	1	2020-01-25
-38	71	4	2015-10-02
-104	98	3	2017-06-29
-105	35	8	2012-07-12
-79	140	8	2011-03-17
-141	91	6	2022-10-23
-57	97	5	2012-07-02
-98	27	9	2012-03-26
-38	62	1	2021-10-31
-33	45	1	2013-05-05
-2	93	9	2022-12-24
-97	63	7	2015-03-02
-123	84	2	2018-11-16
-40	58	5	2022-05-24
-120	113	6	2012-04-23
-52	23	8	2011-07-23
-14	64	1	2022-09-19
-23	74	1	2014-11-03
-9	147	4	2019-01-12
-146	71	7	2021-06-25
-55	73	8	2011-10-11
-128	114	3	2022-06-11
-29	92	5	2022-08-22
-27	107	2	2020-04-06
-17	25	4	2019-12-30
-139	137	3	2023-09-21
-44	107	4	2013-05-17
-33	143	8	2020-01-17
-96	115	9	2015-07-15
-18	68	9	2022-03-30
-92	72	7	2013-11-26
-141	121	2	2014-06-13
-120	8	5	2023-05-22
-111	58	5	2022-09-18
-35	70	5	2014-04-06
-89	89	2	2023-05-28
-123	10	2	2023-05-28
-57	137	8	2014-12-12
-12	34	9	2019-12-04
-145	118	7	2015-11-04
-29	104	6	2012-08-26
-94	12	9	2014-10-27
-3	10	4	2011-07-01
-31	132	10	2017-12-23
-127	104	3	2019-09-01
-11	77	10	2013-10-22
-36	74	6	2013-03-09
-132	9	3	2018-09-02
-53	110	2	2011-12-04
-49	107	4	2023-08-05
-42	83	4	2020-07-02
-106	112	5	2021-07-23
-44	93	3	2022-12-31
-75	31	9	2020-07-18
-9	11	9	2014-09-17
-38	67	10	2017-06-07
-59	54	7	2017-01-25
-91	71	5	2011-04-06
-122	103	3	2016-01-23
-141	2	10	2021-04-08
-58	114	2	2022-01-12
-116	58	9	2015-09-04
-70	149	2	2014-05-09
-113	115	4	2017-08-23
-115	27	4	2017-04-27
-127	4	5	2021-11-23
-27	125	6	2023-03-07
-130	48	9	2019-10-28
-56	10	7	2019-09-30
-136	26	7	2014-02-07
-130	17	4	2012-04-08
-2	124	10	2023-03-21
-149	21	6	2019-05-30
-44	143	4	2022-04-17
-97	10	7	2021-10-22
-18	4	4	2021-01-13
-68	109	4	2017-11-28
-138	82	2	2010-09-30
-81	116	9	2017-10-06
-23	59	2	2016-11-03
-49	82	5	2022-05-12
-146	139	5	2010-10-04
-115	96	10	2012-03-10
-44	71	5	2021-01-01
-67	30	6	2015-01-14
-52	68	3	2011-01-30
-3	13	1	2019-12-17
-12	135	5	2014-07-06
-114	47	1	2012-11-05
-8	71	4	2017-01-12
-45	122	9	2021-11-18
-131	16	2	2014-02-06
-117	137	7	2012-12-04
-33	40	5	2016-02-12
-128	75	2	2014-11-06
-84	17	9	2011-04-02
-15	114	6	2020-10-24
-136	41	3	2015-05-02
-43	123	9	2015-12-06
-93	79	4	2023-08-11
-82	5	7	2020-08-03
-145	117	7	2020-06-27
-44	59	7	2015-11-19
-144	41	9	2011-11-25
-32	140	7	2017-02-23
-31	96	6	2012-07-06
-26	130	3	2017-07-05
-2	67	8	2016-01-07
-135	125	1	2022-04-15
-128	19	10	2010-12-09
-142	43	5	2015-12-02
-31	90	5	2022-01-05
-73	34	2	2014-09-24
-124	74	3	2014-10-24
-14	74	3	2017-12-21
-25	137	1	2017-03-27
-131	31	7	2020-09-26
-42	79	4	2012-12-14
-122	52	4	2012-02-15
-95	17	6	2015-01-09
-46	77	4	2020-10-03
-94	131	5	2011-06-21
-130	44	3	2017-09-21
-8	122	4	2014-10-08
-105	49	7	2020-08-25
-107	111	3	2012-05-04
-20	120	3	2016-05-10
-145	112	6	2011-06-03
-80	26	6	2016-03-31
-48	5	10	2011-11-05
-36	7	2	2016-09-01
-133	75	4	2023-02-03
-53	24	3	2020-08-17
-85	121	2	2013-07-26
-113	92	9	2013-02-22
-129	99	4	2011-04-21
-148	116	4	2014-04-04
-114	19	4	2013-11-02
-113	10	2	2013-06-30
-133	41	10	2019-02-04
-81	136	8	2022-12-15
-109	31	6	2022-10-07
-87	125	3	2018-05-29
-145	106	1	2011-04-12
-81	115	3	2014-11-01
-16	68	7	2020-04-09
-109	110	5	2023-08-08
-12	143	1	2015-11-26
-149	74	8	2019-02-11
-79	135	9	2011-01-23
-59	131	7	2023-08-14
-51	42	3	2014-03-25
-50	30	8	2022-02-23
-81	34	6	2015-08-31
-15	50	5	2011-09-26
-128	102	9	2016-05-09
-49	23	7	2013-11-08
-24	22	4	2017-06-06
-69	7	10	2014-08-08
-108	27	5	2021-11-21
-86	94	8	2013-12-04
-118	110	5	2020-06-10
-27	5	7	2020-07-29
-79	132	3	2014-03-17
-124	40	6	2018-09-22
-125	86	10	2015-11-10
-80	85	8	2020-12-18
-114	35	2	2022-07-05
-143	105	2	2020-03-25
-109	30	4	2022-08-18
-32	83	10	2017-01-18
-117	58	6	2020-08-08
-123	95	8	2021-01-25
-15	118	5	2020-05-13
-147	136	7	2011-05-11
-52	133	4	2010-10-13
-63	108	5	2020-10-12
-65	105	7	2016-03-12
-42	68	10	2022-11-11
-116	18	4	2011-08-19
-136	60	6	2014-07-07
-148	66	6	2019-12-03
-82	129	9	2022-09-16
-104	125	8	2022-02-26
-112	86	10	2014-04-24
-35	34	3	2011-11-25
-114	149	1	2015-01-21
-74	12	4	2020-11-05
-71	31	10	2019-05-29
-140	44	2	2015-08-11
-18	94	9	2015-06-20
-97	132	7	2020-07-01
-90	13	3	2017-08-18
-13	99	8	2015-11-27
-65	76	2	2011-10-11
-113	67	3	2012-11-08
-60	138	5	2012-11-06
-143	7	3	2018-06-12
-54	11	8	2012-11-02
-3	83	1	2017-06-21
-12	93	10	2021-08-18
-117	43	3	2016-07-18
-26	32	9	2010-11-09
-147	46	4	2017-12-19
-13	32	8	2012-02-28
-69	6	6	2013-08-30
-33	53	8	2013-09-17
-17	66	10	2018-05-26
-133	147	2	2020-04-03
-73	122	5	2023-09-13
-12	72	8	2020-09-03
-30	104	6	2013-11-15
-114	95	3	2019-12-18
-123	125	2	2011-10-23
-119	122	9	2014-02-20
-44	88	5	2019-12-03
-34	71	2	2018-08-25
-93	140	9	2014-12-06
-116	25	1	2020-07-02
-130	26	2	2015-05-01
-24	133	8	2013-09-20
-85	13	2	2020-10-13
-2	38	2	2022-05-12
-56	40	10	2019-06-05
-140	149	4	2019-08-08
-86	150	2	2021-11-03
-118	85	2	2019-03-11
-73	46	2	2023-03-04
-49	105	7	2012-06-05
-118	46	9	2021-01-10
-105	108	2	2016-06-16
-15	60	5	2015-03-17
-65	68	8	2016-05-31
-84	20	3	2012-09-15
-81	138	9	2021-06-02
-55	40	6	2021-07-15
-140	131	8	2014-02-28
-95	62	6	2023-05-26
-56	145	4	2014-04-30
-99	111	9	2012-04-21
-3	41	2	2012-08-09
-64	13	3	2015-06-12
-147	114	2	2020-10-22
-141	131	7	2010-12-12
-11	128	5	2015-05-19
-95	94	9	2020-07-12
-124	93	9	2012-06-21
-105	60	1	2023-02-25
-122	73	6	2022-02-05
-42	7	2	2016-01-14
-114	21	7	2015-04-04
-36	128	3	2022-07-06
-9	138	1	2012-12-31
-68	102	1	2014-01-04
-105	44	1	2013-05-14
-64	117	1	2011-10-21
-120	126	4	2021-05-29
-25	29	7	2012-06-15
-15	17	4	2020-11-07
-132	128	8	2022-04-22
-137	66	10	2012-03-24
-59	8	8	2020-12-05
-149	49	6	2021-06-17
-114	82	7	2018-12-20
-1	15	1	2023-07-31
-126	118	6	2020-04-20
-73	42	2	2012-03-29
-75	3	5	2014-08-19
-40	110	9	2014-10-29
-54	3	2	2017-08-19
-54	122	7	2011-01-14
-55	92	2	2015-07-14
-49	138	3	2019-08-11
-13	70	7	2023-04-17
-26	97	8	2017-07-04
-144	59	9	2015-08-07
-36	39	7	2022-06-16
-77	66	4	2021-03-11
-108	8	5	2018-07-19
-120	140	9	2016-11-11
-18	78	7	2020-05-03
-84	112	9	2014-03-09
-68	74	8	2017-04-12
-62	107	1	2016-07-19
-21	35	8	2016-06-19
-25	122	1	2017-07-31
-61	121	8	2021-05-01
-14	108	5	2018-10-31
-94	39	7	2012-05-26
-23	20	4	2016-10-07
-22	90	2	2017-05-12
-109	79	6	2019-04-06
-122	42	5	2016-08-20
-57	121	4	2019-08-10
-112	120	8	2020-01-26
-143	91	1	2019-02-28
-69	70	4	2017-11-07
-123	65	8	2011-10-12
-20	131	4	2015-01-24
-81	103	7	2015-03-25
-69	33	4	2018-06-22
-12	68	10	2019-08-03
-32	54	2	2016-01-10
-133	100	4	2021-01-12
-18	48	3	2016-02-13
-144	21	8	2017-06-24
-109	36	5	2022-09-09
-35	144	8	2013-08-03
-76	134	2	2021-06-24
-39	98	8	2017-02-22
-85	25	1	2018-12-31
-145	82	10	2016-04-26
-19	84	5	2018-03-09
-100	99	2	2015-07-02
-52	38	7	2019-11-18
-74	90	4	2016-07-06
-28	63	9	2020-03-14
-89	97	5	2017-02-11
-115	71	1	2018-05-03
-69	103	2	2022-03-08
-17	58	6	2015-04-02
-137	105	6	2015-04-25
-139	52	1	2011-08-14
-144	86	7	2023-05-20
-134	17	9	2016-01-14
-36	85	9	2011-08-20
-123	114	7	2011-02-06
-13	66	9	2018-01-02
-13	94	3	2018-03-31
-134	58	2	2013-07-03
-54	80	10	2022-04-28
-122	21	3	2016-10-29
-80	84	9	2021-01-17
-21	26	9	2021-07-22
-134	131	6	2016-04-08
-93	50	9	2020-04-02
-5	62	7	2015-06-12
-92	76	10	2017-12-11
-45	62	6	2019-06-24
-11	91	9	2018-02-18
-40	73	8	2017-04-23
-4	10	1	2023-08-24
-12	122	4	2023-08-02
-10	39	10	2017-08-25
-141	44	7	2019-09-26
-148	99	2	2012-05-19
-22	49	2	2016-11-28
+14	112	3	2021-10-27 09:51:25
+71	115	6	2022-03-14 01:04:02
+134	24	7	2023-04-02 12:48:09
+12	139	10	2022-10-29 10:52:11
+108	145	1	2021-12-07 12:40:05
+97	49	9	2022-04-11 06:00:54
+43	100	5	2023-06-17 05:28:16
+99	11	4	2022-08-10 06:35:12
+89	34	4	2023-06-02 10:14:56
+115	142	7	2022-05-27 08:00:43
+129	98	1	2023-03-20 05:31:37
+10	112	6	2023-01-29 11:27:34
+61	31	2	2023-04-18 03:54:57
+96	30	6	2022-11-09 06:35:38
+61	76	2	2023-08-21 10:01:59
+105	25	2	2021-12-16 01:47:44
+95	131	6	2022-03-06 04:49:36
+16	60	6	2023-07-08 02:24:39
+142	5	4	2021-12-17 12:46:37
+15	37	5	2023-06-18 11:05:40
+118	40	5	2023-05-31 03:28:45
+40	19	5	2022-09-03 03:11:59
+121	85	5	2023-02-13 08:28:47
+69	100	4	2022-06-26 07:54:39
+65	141	7	2022-02-21 02:24:15
+24	97	5	2022-05-29 05:09:43
+37	127	3	2022-09-12 01:36:33
+99	32	4	2023-01-28 01:59:38
+97	69	7	2022-07-19 06:56:41
+28	35	3	2023-09-25 06:06:29
+102	50	7	2022-07-01 11:55:37
+115	4	6	2023-07-04 06:34:30
+8	81	3	2022-02-25 12:44:05
+87	9	3	2023-06-03 06:01:46
+120	19	8	2023-07-30 02:16:58
+94	46	9	2021-11-03 05:31:29
+21	29	3	2022-07-05 04:13:13
+2	36	10	2022-02-06 05:38:27
+85	28	5	2022-12-26 03:09:41
+148	65	9	2023-09-14 08:42:22
+109	124	5	2022-06-05 03:22:09
+141	59	10	2023-04-12 02:59:36
+29	93	4	2022-01-10 02:47:13
+113	149	7	2023-06-06 12:55:54
+111	61	3	2022-11-12 04:47:38
+38	66	4	2021-11-29 06:42:13
+14	64	7	2022-10-24 08:23:23
+44	143	6	2022-10-25 08:04:40
+12	98	5	2023-03-08 06:54:25
+127	143	9	2023-03-28 02:18:53
+115	95	5	2022-08-25 12:06:47
+96	76	10	2022-12-29 08:41:18
+136	74	4	2023-01-18 02:15:02
+78	116	8	2022-03-21 11:38:29
+27	112	8	2021-11-02 01:57:50
+42	131	10	2023-05-30 08:12:27
+60	63	1	2021-12-24 06:29:51
+74	6	2	2023-03-31 02:49:07
+133	19	6	2022-03-19 04:41:35
+76	131	6	2022-01-21 07:00:11
+26	132	8	2022-03-10 03:36:32
+56	19	8	2023-02-11 04:19:56
+50	97	10	2023-04-11 07:07:55
+96	15	7	2023-05-27 05:50:39
+110	118	8	2021-11-13 02:41:21
+59	147	4	2022-08-14 04:47:45
+114	24	6	2023-06-24 07:47:44
+39	72	6	2023-07-05 10:54:56
+47	11	1	2022-11-02 06:14:39
+48	102	9	2022-06-09 09:38:24
+64	52	2	2023-04-07 09:41:11
+40	132	3	2021-12-23 12:59:33
+75	25	6	2023-01-22 09:35:24
+125	18	7	2021-10-03 02:44:35
+138	51	10	2022-12-20 05:21:38
+68	49	7	2023-06-07 06:38:31
+139	72	3	2023-07-21 02:28:21
+6	80	6	2021-11-08 03:41:01
+135	10	4	2022-08-02 07:55:20
+45	63	2	2023-07-27 04:12:55
+46	84	1	2021-11-27 01:35:26
+49	70	2	2023-03-16 01:36:08
+68	56	9	2021-12-12 10:32:36
+150	99	2	2022-06-28 10:17:19
+74	34	8	2022-10-26 12:40:05
+61	71	1	2022-01-18 06:44:22
+77	146	4	2022-11-11 11:24:07
+48	127	7	2023-07-14 02:25:29
+106	122	7	2022-03-31 10:08:31
+6	33	2	2023-02-09 02:12:23
+6	141	5	2021-12-28 07:16:18
+6	102	9	2023-05-29 04:19:32
+15	29	5	2023-08-29 11:36:32
+9	46	4	2022-10-01 11:27:28
+32	72	4	2022-03-05 04:44:07
+85	104	9	2021-12-12 02:37:57
+126	83	5	2023-09-13 06:02:33
+120	109	2	2023-05-17 09:21:30
+61	147	1	2023-01-15 07:29:08
+129	49	5	2023-03-06 04:08:23
+11	70	2	2022-09-05 01:25:55
+41	141	7	2022-08-19 06:03:15
+86	144	9	2022-04-11 08:35:39
+17	134	4	2022-12-05 02:33:53
+74	111	9	2022-05-29 01:22:08
+52	43	1	2022-11-10 01:35:12
+122	57	8	2022-04-27 11:11:47
+128	114	6	2021-12-26 06:39:43
+69	112	8	2023-01-05 06:26:40
+26	142	6	2023-08-05 09:51:46
+143	34	3	2022-01-29 10:25:51
+69	43	6	2022-07-18 06:45:00
+137	57	7	2022-02-11 11:21:22
+104	105	1	2023-01-18 10:31:39
+72	106	3	2022-10-13 02:03:21
+11	59	1	2022-01-18 11:26:57
+97	136	7	2022-01-24 12:19:30
+17	91	5	2022-09-21 12:59:22
+94	13	7	2022-12-29 09:11:32
+77	90	2	2023-06-19 08:11:54
+83	4	4	2022-11-30 01:13:31
+110	62	1	2023-06-03 05:48:48
+139	20	7	2022-10-17 11:36:50
+77	97	6	2022-05-25 04:13:00
+21	132	9	2022-11-22 08:25:21
+33	8	6	2022-04-07 12:29:55
+53	136	2	2022-05-11 09:31:01
+146	13	8	2022-11-13 06:09:33
+43	47	7	2022-10-21 09:36:19
+14	123	7	2021-12-30 07:47:38
+10	63	10	2022-09-05 05:32:26
+98	49	4	2022-07-23 02:25:33
+35	60	5	2022-08-10 11:08:15
+93	101	2	2022-09-25 10:23:24
+16	29	9	2022-12-25 03:24:54
+106	13	5	2022-10-27 11:33:26
+143	89	9	2021-10-14 11:59:27
+125	100	7	2022-01-31 04:02:34
+93	92	4	2022-06-30 07:20:58
+49	5	8	2023-03-13 02:12:34
+41	138	7	2022-02-24 01:48:02
+73	95	2	2021-12-20 05:04:13
+17	48	9	2023-09-17 05:13:59
+60	119	9	2022-09-15 06:04:40
+60	91	1	2021-11-16 11:28:02
+32	90	6	2022-06-10 05:19:29
+73	90	9	2022-11-14 08:16:32
+104	53	4	2022-11-21 09:30:47
+111	27	3	2022-11-07 08:57:16
+122	29	6	2022-06-10 10:40:12
+33	38	5	2022-05-19 11:40:16
+56	80	5	2023-03-04 09:54:13
+61	146	10	2022-02-21 04:59:27
+92	75	5	2023-03-04 09:19:40
+64	82	6	2022-11-08 07:09:04
+119	98	5	2022-10-20 06:00:13
+63	73	8	2022-11-30 11:43:09
+2	61	5	2021-12-22 06:59:51
+71	45	1	2023-02-07 01:37:59
+84	83	6	2022-07-12 09:53:18
+138	37	8	2021-11-15 08:35:59
+39	48	3	2022-08-12 11:57:35
+56	144	10	2023-09-04 01:03:56
+65	139	7	2021-11-02 05:09:32
+112	121	9	2022-09-07 07:50:21
+81	104	10	2022-08-01 01:05:06
+114	51	6	2022-09-29 09:17:18
+7	6	2	2022-06-30 12:21:19
+148	17	5	2021-11-09 01:57:40
+67	33	8	2022-11-22 05:39:44
+120	149	2	2021-10-17 08:40:19
+123	21	2	2022-04-26 01:59:22
+86	5	7	2022-03-10 04:22:20
+14	118	2	2022-08-16 05:16:49
+36	134	9	2023-03-11 02:26:19
+37	39	8	2023-06-09 12:15:54
+65	37	2	2023-07-31 11:15:30
+97	20	2	2023-08-04 09:00:34
+101	6	3	2022-03-07 03:22:43
+63	81	5	2023-01-14 11:07:30
+75	26	7	2023-05-28 11:09:20
+98	8	1	2022-08-30 06:42:24
+100	134	9	2021-10-05 06:10:47
+115	64	6	2022-12-21 09:48:46
+46	137	3	2022-10-21 04:50:25
+60	52	3	2022-12-21 10:26:48
+65	38	8	2022-04-07 06:37:49
+8	141	10	2022-06-30 02:48:36
+29	91	2	2022-12-11 02:27:46
+70	101	5	2022-03-23 03:45:37
+103	3	6	2022-02-07 08:59:12
+38	38	2	2022-07-03 09:23:40
+5	3	6	2021-10-22 06:33:00
+127	13	9	2021-10-23 04:38:54
+45	4	5	2023-05-05 09:31:10
+29	127	3	2022-03-24 07:59:13
+42	141	3	2022-07-04 06:30:40
+90	89	9	2023-03-20 10:58:21
+109	1	7	2023-09-24 11:54:34
+110	100	6	2023-02-11 10:58:14
+37	82	6	2022-05-21 03:02:42
+33	113	6	2022-03-20 06:03:02
+47	96	5	2023-07-12 02:46:06
+26	26	3	2022-06-02 05:07:07
+125	67	8	2022-07-17 05:57:59
+61	94	9	2023-03-05 12:34:19
+136	56	4	2021-11-25 09:58:42
+60	67	2	2021-12-08 05:08:48
+54	13	4	2021-12-18 12:51:47
+100	131	2	2021-10-28 09:24:17
+58	46	7	2022-11-11 03:50:32
+129	32	9	2022-09-28 01:58:55
+21	112	3	2023-05-04 12:42:28
+63	7	5	2023-09-10 05:58:19
+57	67	10	2022-07-13 12:37:47
+124	3	2	2022-12-30 04:23:44
+26	141	10	2023-04-06 07:03:57
+25	41	9	2023-03-18 09:40:13
+112	30	8	2023-04-17 06:27:37
+130	127	9	2022-06-21 03:14:48
+81	147	2	2023-08-03 11:45:00
+52	139	7	2023-04-01 09:14:23
+141	114	9	2023-06-11 02:12:47
+78	70	2	2023-05-07 06:42:00
+28	115	1	2022-04-13 12:57:03
+74	41	3	2023-05-04 06:03:48
+80	92	2	2022-08-15 05:40:58
+44	75	9	2023-01-20 10:26:48
+28	72	2	2021-11-18 08:01:31
+148	24	5	2023-08-27 04:10:03
+101	51	7	2022-08-17 12:43:40
+57	14	6	2022-12-06 04:11:56
+80	64	10	2022-03-24 05:20:54
+63	133	5	2022-08-27 07:23:11
+107	27	6	2022-12-19 05:50:32
+127	103	3	2021-12-23 01:59:13
+38	11	4	2023-05-20 02:16:20
+125	49	9	2023-04-08 12:48:45
+56	106	5	2023-02-18 05:35:46
+10	110	4	2022-10-08 12:49:51
+52	108	2	2023-07-01 04:25:21
+67	86	3	2021-11-16 12:19:46
+26	115	4	2023-09-22 05:03:33
+89	54	4	2022-10-03 07:45:05
+81	64	8	2023-07-26 02:50:06
+84	8	1	2023-02-12 01:53:52
+113	146	7	2022-04-17 04:51:54
+3	108	7	2021-10-21 08:25:18
+28	27	6	2023-05-09 06:04:16
+102	80	1	2022-06-05 08:05:04
+11	98	8	2023-08-20 11:28:49
+64	133	5	2022-02-17 06:46:14
+104	112	6	2022-03-23 10:13:40
+42	117	6	2023-07-02 06:09:26
+81	88	4	2022-03-15 09:21:42
+118	116	6	2022-11-11 05:21:25
+114	128	6	2022-10-05 03:21:49
+144	134	7	2022-11-14 09:37:06
+124	108	7	2022-10-23 01:28:31
+129	126	10	2022-12-26 02:57:24
+7	128	4	2022-07-01 10:14:44
+118	22	2	2021-11-01 02:09:13
+76	34	4	2022-08-18 02:51:57
+148	4	10	2021-12-29 05:37:01
+119	23	1	2021-11-08 04:39:57
+3	93	9	2022-10-12 11:22:17
+129	43	1	2023-03-22 07:17:08
+52	12	9	2023-06-20 09:51:48
+15	88	3	2023-08-19 07:49:45
+78	144	5	2022-11-28 08:49:11
+19	72	1	2021-10-03 04:51:09
+122	66	2	2022-04-24 09:47:35
+52	29	9	2022-01-19 09:07:21
+113	132	2	2022-09-19 02:51:26
+76	28	9	2022-11-15 10:32:46
+109	2	4	2022-11-09 02:58:35
+71	82	3	2022-07-21 10:39:08
+58	63	8	2021-11-20 01:10:01
+120	4	5	2023-04-23 07:55:21
+89	56	7	2023-01-23 09:38:46
+12	84	7	2023-01-31 10:48:17
+134	130	8	2023-01-07 11:00:30
+68	15	7	2021-11-16 02:25:18
+116	53	2	2022-01-03 11:07:49
+36	44	10	2021-10-11 01:50:45
+97	8	4	2022-03-20 02:59:02
+46	122	3	2023-07-02 02:47:55
+12	73	7	2023-09-07 04:20:37
+139	146	1	2023-07-02 03:18:04
+17	37	8	2022-01-26 05:59:43
+126	82	10	2021-10-19 12:23:21
+31	75	2	2021-10-22 01:54:39
+135	36	7	2023-04-09 11:45:16
+8	114	9	2022-03-18 06:44:19
+99	93	3	2023-03-13 12:15:06
+25	96	3	2023-06-30 08:18:32
+4	6	2	2022-12-21 01:33:55
+53	90	9	2023-09-19 10:18:30
+18	89	4	2022-01-13 11:30:58
+74	116	6	2022-12-02 07:55:28
+102	58	2	2022-09-06 08:18:01
+65	124	6	2021-10-13 07:57:08
+27	134	8	2022-01-03 12:51:27
+6	73	4	2022-07-01 05:12:59
+143	107	7	2022-03-14 10:49:13
+110	96	8	2023-02-11 01:25:46
+62	89	6	2022-03-28 05:09:50
+118	15	9	2023-06-06 08:49:22
+121	82	3	2022-11-14 05:44:11
+95	45	6	2022-12-19 06:48:06
+57	40	6	2022-08-06 12:28:03
+94	94	10	2023-03-27 09:50:23
+126	17	2	2022-11-06 03:33:04
+64	117	2	2023-02-13 03:29:47
+126	10	6	2022-10-08 01:34:11
+123	14	6	2023-03-16 05:47:49
+18	72	3	2021-09-27 06:38:58
+149	67	2	2021-12-25 07:00:26
+121	41	9	2023-03-11 03:44:56
+124	80	2	2023-04-15 08:41:34
+55	100	6	2023-03-16 11:09:53
+111	126	7	2022-11-03 04:07:30
+75	60	4	2023-09-01 06:13:35
+30	31	4	2023-08-07 06:41:33
+122	100	6	2022-02-01 07:35:52
+47	50	10	2022-01-24 12:16:22
+118	48	5	2023-05-17 09:48:44
+86	142	3	2021-09-29 09:01:56
+136	117	1	2022-06-16 10:37:30
+16	22	4	2021-10-04 07:12:35
+61	36	2	2023-09-21 04:18:36
+20	88	9	2023-04-27 02:58:24
+83	38	6	2021-11-17 03:58:44
+133	104	2	2023-08-30 11:52:11
+75	141	8	2023-05-23 11:31:30
+12	149	6	2022-10-29 12:14:45
+18	148	8	2022-01-09 08:49:22
+93	95	4	2023-04-02 03:51:59
+102	13	9	2022-06-07 02:23:39
+4	111	4	2022-05-07 02:14:48
+113	57	3	2022-08-19 03:36:55
+24	21	5	2021-12-21 12:41:48
+126	140	9	2022-01-09 02:14:06
+119	85	7	2022-05-04 06:01:00
+51	16	4	2023-01-06 06:40:38
+75	32	4	2022-11-20 12:59:43
+9	102	3	2021-12-22 03:29:19
+131	63	5	2022-12-31 07:46:28
+7	147	5	2022-07-20 01:22:08
+137	7	4	2023-03-25 09:49:41
+3	97	3	2022-05-25 11:48:20
+146	89	1	2023-08-16 07:10:43
+11	39	3	2022-08-26 07:52:42
+144	146	5	2022-11-17 07:28:15
+61	110	2	2023-08-22 11:51:09
+43	110	10	2022-05-21 02:06:42
+97	61	1	2022-11-30 01:46:29
+87	111	5	2022-07-27 03:32:08
+69	16	5	2022-04-27 05:21:32
+78	28	10	2023-02-24 09:31:35
+26	46	8	2022-07-20 02:39:14
+98	96	9	2023-03-21 01:05:58
+127	100	6	2021-10-25 11:49:54
+128	150	8	2022-02-26 07:55:10
+102	56	6	2021-11-08 12:55:45
+100	32	2	2023-07-28 12:33:12
+82	26	2	2022-07-21 01:35:58
+110	19	2	2023-08-12 06:51:34
+119	22	7	2022-05-27 08:18:39
+85	35	4	2022-10-20 12:41:30
+50	25	6	2022-07-18 02:57:07
+96	13	6	2021-10-08 10:45:48
+15	7	3	2021-12-02 10:51:19
+121	106	9	2022-06-10 11:45:49
+81	57	9	2022-07-01 03:48:42
+58	94	1	2021-10-26 09:38:27
+63	130	9	2023-02-04 08:27:23
+77	101	7	2023-03-02 10:03:05
+130	143	5	2023-05-02 04:33:00
+92	108	9	2023-04-19 08:56:16
+121	77	9	2022-08-28 05:48:31
+86	65	10	2021-10-18 12:36:49
+90	57	7	2022-01-03 04:16:51
+36	95	10	2023-01-18 10:17:34
+34	139	3	2023-05-05 06:25:36
+51	56	9	2022-05-03 07:28:52
+18	117	6	2023-04-02 10:24:37
+9	67	5	2023-07-29 07:08:08
+55	78	8	2022-03-28 01:14:13
+60	75	6	2022-08-07 01:31:45
+72	98	8	2022-05-07 12:02:00
+73	28	4	2023-05-28 01:23:47
+11	21	5	2022-08-20 10:57:37
+124	75	3	2021-10-25 03:38:39
+82	95	3	2021-10-19 07:59:30
+122	10	4	2023-06-24 10:19:30
+48	101	4	2023-01-12 09:46:34
+106	68	6	2022-07-19 02:04:06
+12	45	2	2023-04-15 06:36:41
+117	25	1	2021-12-25 09:32:35
+24	56	9	2023-02-16 10:06:55
+139	61	6	2022-02-22 12:05:19
+20	27	5	2022-08-23 08:32:05
+48	74	4	2022-03-08 07:14:51
+44	84	7	2023-08-25 02:13:20
+117	115	4	2022-12-09 10:17:24
+64	8	8	2021-11-18 03:09:55
+127	33	9	2023-01-04 05:59:03
+73	53	6	2022-06-01 08:17:13
+32	125	8	2022-01-20 08:03:25
+116	96	3	2022-08-23 09:19:18
+66	55	3	2022-01-02 05:33:23
+146	123	4	2023-04-03 06:58:04
+58	19	7	2022-08-26 04:47:36
+86	57	7	2022-03-30 11:16:57
+70	64	9	2022-08-08 11:50:51
+47	115	4	2022-06-04 02:10:42
+144	125	7	2022-08-19 01:56:19
+30	132	2	2023-09-24 02:47:56
+118	127	2	2023-03-09 10:47:44
+5	138	4	2022-06-22 02:16:51
+93	113	5	2023-02-26 05:10:07
+3	53	4	2022-01-10 03:50:58
+67	15	5	2021-10-11 03:36:59
+84	117	1	2021-11-03 10:23:46
+35	43	2	2021-10-26 02:51:20
+29	22	3	2022-02-03 01:25:58
+73	63	3	2023-05-26 09:41:24
+135	71	8	2021-12-11 04:49:06
+82	116	7	2023-05-12 01:19:45
+64	6	6	2021-11-01 09:08:48
+28	85	7	2023-07-20 01:33:14
+134	80	4	2023-02-09 12:09:59
+84	126	8	2023-08-31 02:45:12
+40	49	7	2022-12-24 10:20:20
+123	86	3	2023-04-19 03:44:39
+133	87	1	2023-03-09 09:40:06
+41	11	1	2022-12-22 07:40:20
+121	86	8	2022-08-19 11:49:16
+130	55	9	2023-07-17 09:32:55
+100	79	7	2022-10-10 09:26:59
+87	99	1	2023-05-04 11:07:09
+41	144	7	2023-05-29 04:12:31
+56	128	7	2023-08-21 05:52:18
+46	118	3	2022-10-19 04:56:57
+90	20	8	2023-04-21 04:49:40
+48	36	6	2022-09-24 12:27:17
+34	88	7	2022-09-18 01:43:24
+77	21	7	2022-08-28 03:20:51
+125	76	2	2023-05-31 07:03:08
+2	90	5	2022-07-23 12:54:08
+138	141	8	2022-10-02 01:51:58
+85	139	2	2023-06-30 12:33:25
+23	49	5	2022-09-11 06:28:25
+109	54	2	2022-02-20 02:33:29
+40	34	5	2022-08-26 02:49:59
+134	84	6	2023-03-25 08:22:36
+47	56	5	2022-12-22 05:35:22
+118	68	9	2021-11-02 04:07:23
+83	57	6	2022-03-09 03:56:28
+4	76	4	2023-02-22 01:55:07
+102	69	3	2023-02-14 07:06:40
+65	53	8	2023-06-22 12:31:03
+109	57	2	2021-12-07 07:06:28
+38	51	8	2022-06-25 05:39:45
+103	115	2	2022-04-30 03:51:36
+115	67	4	2021-10-24 10:50:35
+143	95	4	2023-04-25 08:21:50
+41	17	10	2021-11-01 08:45:24
+25	67	7	2023-09-07 12:59:14
+61	118	9	2022-04-14 03:42:59
+114	59	5	2022-01-15 09:29:53
+92	58	1	2022-07-28 05:56:11
+9	128	2	2022-01-22 06:41:45
+115	135	7	2022-05-30 09:32:30
+102	20	5	2023-02-14 07:23:10
+90	60	6	2021-10-23 11:25:24
+126	97	9	2022-06-08 12:51:55
+111	76	5	2022-03-12 08:49:57
+61	51	6	2021-11-11 10:58:43
+67	92	9	2022-06-11 03:25:41
+25	117	5	2023-09-08 04:17:52
+17	90	9	2022-01-21 01:15:27
+98	2	8	2023-05-04 06:33:54
+118	93	1	2023-09-06 08:29:48
+98	128	6	2022-06-12 02:55:31
+9	78	3	2022-07-11 01:13:08
+86	29	5	2022-03-13 01:45:54
+31	85	9	2023-01-24 03:34:16
+100	14	6	2023-09-03 03:13:21
+145	84	6	2022-08-12 07:39:19
+104	119	7	2022-02-01 01:13:42
+60	110	8	2023-08-10 02:13:49
+87	115	3	2022-12-12 05:00:23
+53	108	6	2022-08-02 04:59:16
+135	104	5	2023-09-09 06:00:27
+90	93	4	2021-12-04 09:15:06
 \.
 
 
@@ -2862,17 +3258,17 @@ SELECT pg_catalog.setval('public.movies_id_seq', 150, true);
 
 
 --
--- Name: person_positions_id_seq; Type: SEQUENCE SET; Schema: public; Owner: gb_sol
---
-
-SELECT pg_catalog.setval('public.person_positions_id_seq', 10, true);
-
-
---
 -- Name: persons_id_seq; Type: SEQUENCE SET; Schema: public; Owner: gb_sol
 --
 
 SELECT pg_catalog.setval('public.persons_id_seq', 150, true);
+
+
+--
+-- Name: positions_id_seq; Type: SEQUENCE SET; Schema: public; Owner: gb_sol
+--
+
+SELECT pg_catalog.setval('public.positions_id_seq', 10, true);
 
 
 --
@@ -2975,6 +3371,14 @@ ALTER TABLE ONLY public.images
 
 
 --
+-- Name: movie_positions movie_positions_pkey; Type: CONSTRAINT; Schema: public; Owner: gb_sol
+--
+
+ALTER TABLE ONLY public.movie_positions
+    ADD CONSTRAINT movie_positions_pkey PRIMARY KEY (movie_id, person_id, position_id);
+
+
+--
 -- Name: movie_types movie_types_pkey; Type: CONSTRAINT; Schema: public; Owner: gb_sol
 --
 
@@ -2999,22 +3403,6 @@ ALTER TABLE ONLY public.movies
 
 
 --
--- Name: person_positions person_positions_pkey; Type: CONSTRAINT; Schema: public; Owner: gb_sol
---
-
-ALTER TABLE ONLY public.person_positions
-    ADD CONSTRAINT person_positions_pkey PRIMARY KEY (id);
-
-
---
--- Name: person_positions person_positions_position_name_key; Type: CONSTRAINT; Schema: public; Owner: gb_sol
---
-
-ALTER TABLE ONLY public.person_positions
-    ADD CONSTRAINT person_positions_position_name_key UNIQUE (position_name);
-
-
---
 -- Name: persons persons_main_photo_id_key; Type: CONSTRAINT; Schema: public; Owner: gb_sol
 --
 
@@ -3028,6 +3416,22 @@ ALTER TABLE ONLY public.persons
 
 ALTER TABLE ONLY public.persons
     ADD CONSTRAINT persons_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: positions positions_pkey; Type: CONSTRAINT; Schema: public; Owner: gb_sol
+--
+
+ALTER TABLE ONLY public.positions
+    ADD CONSTRAINT positions_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: positions positions_position_name_key; Type: CONSTRAINT; Schema: public; Owner: gb_sol
+--
+
+ALTER TABLE ONLY public.positions
+    ADD CONSTRAINT positions_position_name_key UNIQUE (position_name);
 
 
 --
@@ -3119,11 +3523,71 @@ ALTER TABLE ONLY public.viewer_profiles
 
 
 --
+-- Name: stars check_movie_genres_on_insert; Type: TRIGGER; Schema: public; Owner: gb_sol
+--
+
+CREATE TRIGGER check_movie_genres_on_insert BEFORE INSERT ON public.stars FOR EACH ROW EXECUTE FUNCTION public.check_movie_genres_trigger();
+
+
+--
+-- Name: stars check_movie_genres_on_update; Type: TRIGGER; Schema: public; Owner: gb_sol
+--
+
+CREATE TRIGGER check_movie_genres_on_update BEFORE UPDATE ON public.stars FOR EACH ROW EXECUTE FUNCTION public.check_movie_genres_trigger();
+
+
+--
+-- Name: stars check_user_stars_on_insert; Type: TRIGGER; Schema: public; Owner: gb_sol
+--
+
+CREATE TRIGGER check_user_stars_on_insert BEFORE INSERT ON public.stars FOR EACH ROW EXECUTE FUNCTION public.check_user_stars_trigger();
+
+
+--
+-- Name: stars check_user_stars_on_update; Type: TRIGGER; Schema: public; Owner: gb_sol
+--
+
+CREATE TRIGGER check_user_stars_on_update BEFORE UPDATE ON public.stars FOR EACH ROW EXECUTE FUNCTION public.check_user_stars_trigger();
+
+
+--
 -- Name: images images_image_type_id_fk; Type: FK CONSTRAINT; Schema: public; Owner: gb_sol
 --
 
 ALTER TABLE ONLY public.images
     ADD CONSTRAINT images_image_type_id_fk FOREIGN KEY (image_type_id) REFERENCES public.image_types(id) ON DELETE SET NULL;
+
+
+--
+-- Name: movie_positions movie_positions_movie_id_fk; Type: FK CONSTRAINT; Schema: public; Owner: gb_sol
+--
+
+ALTER TABLE ONLY public.movie_positions
+    ADD CONSTRAINT movie_positions_movie_id_fk FOREIGN KEY (movie_id) REFERENCES public.movies(id) ON DELETE CASCADE;
+
+
+--
+-- Name: movie_positions movie_positions_person_id_fk; Type: FK CONSTRAINT; Schema: public; Owner: gb_sol
+--
+
+ALTER TABLE ONLY public.movie_positions
+    ADD CONSTRAINT movie_positions_person_id_fk FOREIGN KEY (person_id) REFERENCES public.persons(id) ON DELETE CASCADE;
+
+
+--
+-- Name: movie_positions movie_positions_position_id_fk; Type: FK CONSTRAINT; Schema: public; Owner: gb_sol
+--
+
+ALTER TABLE ONLY public.movie_positions
+    ADD CONSTRAINT movie_positions_position_id_fk FOREIGN KEY (position_id) REFERENCES public.positions(id) ON DELETE CASCADE;
+
+
+--
+-- Name: movies movies_movie_type_id_fk; Type: FK CONSTRAINT; Schema: public; Owner: gb_sol
+--
+
+ALTER TABLE ONLY public.movies
+    ADD CONSTRAINT movies_movie_type_id_fk FOREIGN KEY (movie_type_id) REFERENCES public.movie_types(id) ON DELETE CASCADE;
 
 
 --
@@ -3140,6 +3604,30 @@ ALTER TABLE ONLY public.persons
 
 ALTER TABLE ONLY public.roles
     ADD CONSTRAINT roles_movie_id_fk FOREIGN KEY (movie_id) REFERENCES public.movies(id) ON DELETE SET NULL;
+
+
+--
+-- Name: roles roles_person_id_fk; Type: FK CONSTRAINT; Schema: public; Owner: gb_sol
+--
+
+ALTER TABLE ONLY public.roles
+    ADD CONSTRAINT roles_person_id_fk FOREIGN KEY (person_id) REFERENCES public.persons(id) ON DELETE CASCADE;
+
+
+--
+-- Name: stars stars_movie_id_fk; Type: FK CONSTRAINT; Schema: public; Owner: gb_sol
+--
+
+ALTER TABLE ONLY public.stars
+    ADD CONSTRAINT stars_movie_id_fk FOREIGN KEY (movie_id) REFERENCES public.movies(id) ON DELETE CASCADE;
+
+
+--
+-- Name: stars stars_user_id_fk; Type: FK CONSTRAINT; Schema: public; Owner: gb_sol
+--
+
+ALTER TABLE ONLY public.stars
+    ADD CONSTRAINT stars_user_id_fk FOREIGN KEY (user_id) REFERENCES public.users(id) ON DELETE CASCADE;
 
 
 --
