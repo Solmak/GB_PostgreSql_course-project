@@ -26,10 +26,12 @@ CREATE OR REPLACE TRIGGER check_user_stars_on_insert BEFORE INSERT ON stars
 FOR EACH ROW
 EXECUTE FUNCTION check_user_stars_trigger();
 
+-- Tests
 INSERT INTO stars (movie_id,user_id,number_of_stars)
-VALUES
-  (34,89,12);
+VALUES (34,89,12);
 UPDATE stars SET number_of_stars = 11 WHERE movie_id = 34 AND user_id = 88;
+
+
 
 
 -- Дополнительно. Проверка жанров. Пока не работает. Не срабатывает триггер
@@ -53,7 +55,7 @@ RETURN NEW;
 END
 $$
 LANGUAGE PLPGSQL;
-  
+
 CREATE OR REPLACE TRIGGER check_movie_genres_on_update BEFORE UPDATE ON stars 
 FOR EACH ROW
 EXECUTE FUNCTION check_movie_genres_trigger();
@@ -62,5 +64,6 @@ CREATE OR REPLACE TRIGGER check_movie_genres_on_insert BEFORE INSERT ON stars
 FOR EACH ROW
 EXECUTE FUNCTION check_movie_genres_trigger();
 
+-- Tests
 UPDATE movies SET movie_genres = '{7,2,3}' WHERE id = 2;
 SELECT m.id, m.movie_genres FROM movies m WHERE m.id = 2;

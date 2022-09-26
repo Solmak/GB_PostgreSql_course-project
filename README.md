@@ -41,3 +41,5 @@
    - **Отчёт:** [09_Stage_Queries](https://github.com/Solmak/GB_PostgreSql_course-project/blob/master/09_Stage_Queries.sql)
 
 10. Для одного из запросов, созданных в пункте 6, провести оптимизацию. В качестве отчета приложить планы выполнения запроса, ваш анализ и показать действия, которые улучшили эффективность запроса.
+    - **Отчёт** [10_Stage_Optimization PDF](https://github.com/Solmak/GB_PostgreSql_course-project/blob/master/10_Stage_Optimization.pdf)
+    - **Отчёт** [10_Stage_Optimization SQL](https://github.com/Solmak/GB_PostgreSql_course-project/blob/master/10_Stage_Optimization.sql)

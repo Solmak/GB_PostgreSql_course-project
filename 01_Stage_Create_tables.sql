@@ -96,6 +96,8 @@ BEGIN;
 );
 
 -- Жанры фильмов
+-- Таблица не висит в воздухе. Возможно будет связана 
+-- триггером с полем-массивом movie_genres в таблице movies
     CREATE TABLE genres (
         id SERIAL PRIMARY KEY,
         genre_name VARCHAR(20) UNIQUE
