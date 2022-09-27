@@ -29,4 +29,5 @@ CREATE INDEX stars_user_id_idx ON stars (user_id);
 CREATE INDEX stars_rated_at_idx ON stars (rated_at);
 
 SET enable_seqscan TO ON;
+--SET enable_seqscan TO OFF;
 

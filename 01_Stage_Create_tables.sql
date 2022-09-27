@@ -10,24 +10,29 @@
 
 -- Очистка структуры
 BEGIN;
-    DROP TABLE IF EXISTS stars;
-    DROP TABLE IF EXISTS roles;
-    DROP TABLE IF EXISTS movie_positions;
-    DROP TABLE IF EXISTS persons;
-    DROP TABLE IF EXISTS viewer_profiles;
-    DROP TABLE IF EXISTS user_profiles;
-    DROP TABLE IF EXISTS users;
-    DROP TABLE IF EXISTS images;
-    DROP TABLE IF EXISTS image_types;
-    DROP TABLE IF EXISTS authorization_types;
-    DROP TABLE IF EXISTS genres;
-    DROP TABLE IF EXISTS videos;
-    DROP TABLE IF EXISTS movies;
-    DROP TABLE IF EXISTS movie_types;
-    DROP TABLE IF EXISTS video_types;
-    DROP TABLE IF EXISTS positions;
-    DROP TYPE  IF EXISTS genders;
-    DROP TYPE  IF EXISTS age_restrictions;
+    DROP TABLE IF EXISTS stars CASCADE;
+    DROP TABLE IF EXISTS roles CASCADE;
+    DROP TABLE IF EXISTS movie_positions CASCADE;
+    DROP TABLE IF EXISTS persons CASCADE;
+    DROP TABLE IF EXISTS viewer_profiles CASCADE;
+    DROP TABLE IF EXISTS user_profiles CASCADE;
+    DROP TABLE IF EXISTS users CASCADE;
+    DROP TABLE IF EXISTS images CASCADE;
+    DROP TABLE IF EXISTS image_types CASCADE;
+    DROP TABLE IF EXISTS authorization_types CASCADE;
+    DROP TABLE IF EXISTS genres CASCADE;
+    DROP TABLE IF EXISTS videos CASCADE;
+    DROP TABLE IF EXISTS movies CASCADE;
+    DROP TABLE IF EXISTS movie_types CASCADE;
+    DROP TABLE IF EXISTS video_types CASCADE;
+    DROP TABLE IF EXISTS positions CASCADE;
+    DROP TYPE IF EXISTS genders CASCADE;
+    DROP TYPE IF EXISTS age_restrictions CASCADE;
+    DROP FUNCTION IF EXISTS check_foreign_key_array CASCADE;
+    DROP FUNCTION IF EXISTS check_user_stars_trigger CASCADE;
+    DROP FUNCTION IF EXISTS movie_rate CASCADE;
+    DROP PROCEDURE IF EXISTS set_movies_stars_rate CASCADE;
+
 --ROLLBACK;
 --COMMIT;
 
@@ -107,8 +112,9 @@ BEGIN;
     CREATE TYPE age_restrictions AS ENUM ('0+', '6+', '12+', '16+', '18+');
     CREATE TABLE viewer_profiles (
         id SERIAL PRIMARY KEY,
-        user_id INTEGER,
+        user_id INTEGER NOT NULL,
         genres_ids INTEGER[],   -- TODO внешний ключ на массив
+--        genres_ids INTEGER[] CHECK (check_foreign_key_array(genres_ids, 'public', 'genres', 'id')),
         age_restriction age_restrictions,
         CONSTRAINT viewer_profiles_user_id_fk 
             FOREIGN KEY (user_id)
@@ -130,6 +136,7 @@ BEGIN;
         original_title VARCHAR(150) NOT NULL,
         age_restriction age_restrictions,
         movie_genres INTEGER[],     -- TODO внешний ключ на массив
+--        movie_genres INTEGER[] CHECK (check_foreign_key_array(movie_genres, 'public', 'genres', 'id')),     -- TODO внешний ключ на массив
         date_of_release DATE,
         country VARCHAR(50),
         running_time TIME,

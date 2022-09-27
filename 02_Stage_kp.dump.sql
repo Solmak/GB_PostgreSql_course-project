@@ -44,29 +44,37 @@ CREATE TYPE public.genders AS ENUM (
 ALTER TYPE public.genders OWNER TO gb_sol;
 
 --
--- Name: check_movie_genres_trigger(); Type: FUNCTION; Schema: public; Owner: gb_sol
+-- Name: check_foreign_key_array(anyarray, text, text, text); Type: FUNCTION; Schema: public; Owner: gb_sol
 --
 
-CREATE FUNCTION public.check_movie_genres_trigger() RETURNS trigger
-    LANGUAGE plpgsql
-    AS $$
-DECLARE genre_row RECORD;
+CREATE FUNCTION public.check_foreign_key_array(data anyarray, ref_schema text, ref_table text, ref_column text) RETURNS boolean
+    LANGUAGE plpgsql STRICT
+    AS $_$
+DECLARE
+    fake_id text;
+    sql text default format($$
+            select id::text
+            from unnest($1) as x(id)
+            where id is not null
+              and id not in (select %3$I
+                             from %1$I.%2$I
+                             where %3$I = any($1))
+            limit 1;
+        $$, ref_schema, ref_table, ref_column);
 BEGIN
-FOR genre_row IN
-        SELECT id FROM genres
-    LOOP 
-        RAISE NOTICE 'Incorrect genre % in array!', genre_row.id;
-        IF NOT genre_row.id = ANY (NEW.movie_genres)
-        THEN
-            RAISE EXCEPTION 'Incorrect genre % in array!', genre_row.id;
-        END IF;
-    END LOOP;
-RETURN NEW;
+    EXECUTE sql USING data INTO fake_id;
+
+    IF (fake_id IS NOT NULL) THEN
+        RAISE NOTICE 'Array element value % does not exist in column %.%.%', fake_id, ref_schema, ref_table, ref_column;
+        RETURN false;
+    END IF;
+
+    RETURN true;
 END
-$$;
+$_$;
 
 
-ALTER FUNCTION public.check_movie_genres_trigger() OWNER TO gb_sol;
+ALTER FUNCTION public.check_foreign_key_array(data anyarray, ref_schema text, ref_table text, ref_column text) OWNER TO gb_sol;
 
 --
 -- Name: check_user_stars_trigger(); Type: FUNCTION; Schema: public; Owner: gb_sol
@@ -334,7 +342,8 @@ CREATE TABLE public.movies (
     date_of_release date,
     country character varying(50),
     running_time time without time zone,
-    stars_rate real
+    stars_rate real,
+    CONSTRAINT movies_movie_genres_check CHECK (public.check_foreign_key_array(movie_genres, 'public'::text, 'genres'::text, 'id'::text))
 );
 
 
@@ -663,9 +672,10 @@ ALTER SEQUENCE public.videos_id_seq OWNED BY public.videos.id;
 
 CREATE TABLE public.viewer_profiles (
     id integer NOT NULL,
-    user_id integer,
+    user_id integer NOT NULL,
     genres_ids integer[],
-    age_restriction public.age_restrictions
+    age_restriction public.age_restrictions,
+    CONSTRAINT viewer_profiles_genres_ids_check CHECK (public.check_foreign_key_array(genres_ids, 'public'::text, 'genres'::text, 'id'::text))
 );
 
 
@@ -1179,156 +1189,156 @@ COPY public.movie_types (id, type_name) FROM stdin;
 --
 
 COPY public.movies (id, movie_type_id, title, original_title, age_restriction, movie_genres, date_of_release, country, running_time, stars_rate) FROM stdin;
-2	2	tempor, est	nec orci.	12+	{7,2,3}	1932-10-02	Philippines	04:06:21	6.6666665
-1	3	pellentesque a, facilisis	risus. In mi	6+	{4}	2005-07-04	South Africa	01:35:44	\N
-3	1	Vivamus	laoreet ipsum.	12+	{1,2,3}	1985-07-01	Philippines	06:50:49	5.75
-4	1	magna.	ut erat.	0+	{13}	1948-01-18	South Africa	07:02:18	3.3333333
-5	2	amet, consectetuer	non	6+	{19,22}	1957-12-08	Indonesia	06:36:02	5
-6	3	justo. Proin	tortor,	16+	{22}	1972-11-08	United Kingdom	22:21:59	5.2
-7	2	neque. Nullam	Sed nec	12+	{1,2,3}	1948-06-04	Australia	16:28:56	3.6666667
-8	3	enim consequat purus.	et,	6+	{19,22}	1972-12-29	Norway	08:00:39	7.3333335
+1	3	pellentesque a, facilisis	risus. In mi	6+	{4}	2005-07-04	South Africa	01:35:44	3.6
+3	1	Vivamus	laoreet ipsum.	12+	{1,2,3}	1985-07-01	Philippines	06:50:49	5.3
+4	1	magna.	ut erat.	0+	{13}	1948-01-18	South Africa	07:02:18	3.7
+5	2	amet, consectetuer	non	6+	{19,22}	1957-12-08	Indonesia	06:36:02	6.2
+6	3	justo. Proin	tortor,	16+	{22}	1972-11-08	United Kingdom	22:21:59	2.9
+7	2	neque. Nullam	Sed nec	12+	{1,2,3}	1948-06-04	Australia	16:28:56	6.1
+8	3	enim consequat purus.	et,	6+	{19,22}	1972-12-29	Norway	08:00:39	4.2
 9	3	convallis est,	mauris	6+	{26}	1934-03-10	Norway	12:44:43	3.4
-10	2	Proin eget odio.	mauris a	12+	{4}	1977-08-31	Brazil	21:05:31	6.6666665
-11	2	luctus sit	penatibus	12+	{27,20}	1993-09-03	Nigeria	21:34:22	3.8
-12	3	velit	condimentum eget, volutpat	12+	{12,5}	1991-09-10	Austria	12:44:57	6.1666665
-13	3	Quisque	in aliquet lobortis,	0+	{4}	2009-04-16	Spain	07:05:23	\N
-14	1	arcu. Vestibulum	eget, venenatis	0+	{11,9}	1939-09-24	Costa Rica	01:31:54	4.75
-15	1	risus. Donec egestas.	risus. Duis a	6+	{15}	1989-05-31	Ireland	15:57:56	4
-16	3	pharetra. Quisque	semper	6+	{11,3}	1953-10-29	Sweden	17:30:50	6.3333335
-17	1	volutpat. Nulla	tempor augue ac	6+	{1}	1939-05-05	New Zealand	16:21:12	7
-18	3	ligula. Nullam	semper cursus. Integer	6+	{16}	2013-03-09	United Kingdom	09:58:41	5.25
-19	4	purus gravida sagittis.	rutrum magna.	0+	{9}	1987-02-18	South Africa	20:02:00	1
-20	3	montes, nascetur	ultrices. Duis volutpat	12+	{12}	1952-09-10	Norway	08:30:17	7
-21	2	quis	pede.	6+	{1,5,9}	1951-02-11	Canada	17:53:28	5
-22	2	Nam interdum	luctus	0+	{19}	2002-08-05	Austria	13:59:40	\N
-23	1	lectus pede, ultrices	mauris id	0+	{12}	2009-11-28	Sweden	11:23:59	5
-24	3	Nam tempor	lacus.	12+	{11,9}	2008-07-11	Sweden	17:07:54	6.3333335
-25	3	risus. In	id magna	12+	{21,23}	1939-09-07	Poland	02:57:25	6
-26	3	fringilla ornare	nonummy ac,	12+	{2}	1976-08-04	Poland	19:24:28	6.5
-27	3	Nullam	erat vel pede	0+	{1,2,3}	1978-10-10	Canada	06:42:34	8
-28	4	est	ligula	6+	{21}	2005-09-02	Singapore	11:07:35	3.8
-29	2	lobortis quis, pede.	leo. Cras vehicula	6+	{23}	1940-06-08	Russian Federation	17:24:48	3
-30	4	auctor ullamcorper,	ridiculus mus.	16+	{2}	1955-08-05	South Africa	09:00:50	3
-31	2	ullamcorper. Duis	auctor, velit eget	0+	{1}	2015-09-24	New Zealand	11:07:33	5.5
-32	2	velit. Pellentesque	eu, accumsan	6+	{21}	2014-06-02	Colombia	18:56:15	6
-33	3	faucibus. Morbi	sagittis semper. Nam	12+	{6}	1940-06-09	France	21:25:38	5.6666665
-34	1	luctus et	urna et	12+	{15}	1978-06-14	China	00:59:07	5
-35	3	nulla	ac, fermentum vel,	6+	{17}	1973-09-22	Germany	05:50:18	3.5
-36	1	sem,	non enim. Mauris	16+	{10}	1934-05-20	Netherlands	21:51:07	9.666667
-37	3	amet, consectetuer	tristique	6+	{2,17}	1949-11-30	Philippines	10:03:51	5.6666665
-38	1	pretium et,	lacus pede	6+	{23}	1936-11-27	Brazil	11:39:18	4.5
-39	1	Sed	Quisque ac	0+	{7}	1986-11-25	Nigeria	09:35:27	4.5
-40	2	mattis. Integer eu	non, feugiat nec,	6+	{24}	1949-07-01	Netherlands	07:48:50	5
-41	2	lacus. Mauris	Donec luctus aliquet	12+	{2}	1990-12-28	South Africa	13:36:28	6.4
-42	3	consectetuer adipiscing	consectetuer mauris	16+	{21}	2019-01-18	Norway	06:00:00	6.3333335
-43	3	Duis risus	vulputate, nisi	6+	{15}	1974-07-09	India	16:30:36	7.3333335
-44	4	rutrum	nulla. Cras	0+	{25}	1960-12-08	Sweden	18:03:57	7.3333335
-45	1	elit. Curabitur	Integer mollis. Integer	16+	{18}	2005-01-23	France	08:14:04	3.5
-46	4	tellus	Cras vulputate	6+	{10}	2006-02-18	Italy	22:22:57	2.5
-47	4	et magnis dis	ipsum. Suspendisse	6+	{13}	1969-01-10	Chile	18:07:43	5
-48	2	ligula	egestas. Aliquam	12+	{1}	1952-06-06	Peru	23:25:05	6
-49	4	ut erat. Sed	et	6+	{28}	1946-02-16	Norway	15:32:44	5
-50	3	Aenean eget	dignissim pharetra. Nam	0+	{6}	1943-02-13	Costa Rica	23:20:22	8
-51	4	non massa non	ante.	12+	{8}	1950-10-22	Germany	19:12:46	6.5
-52	3	nec, malesuada	In mi	0+	{17}	1988-06-26	Indonesia	00:04:22	5.6
-53	3	hymenaeos. Mauris	sagittis semper.	6+	{13,7}	2003-08-26	Nigeria	18:48:02	5.6666665
-54	1	ac mattis	at, nisi.	6+	{4}	1961-02-12	Spain	10:36:59	4
-55	3	ligula. Nullam	non, feugiat nec,	6+	{21,23}	1953-07-15	Spain	08:43:32	7
-56	2	Quisque	magnis dis parturient	6+	{28}	1996-06-02	Mexico	03:14:35	7
-57	1	Nunc	amet, consectetuer	6+	{1,5,9}	2018-07-15	Canada	04:01:47	7.3333335
-58	3	penatibus	Donec tempus, lorem	6+	{17}	2002-01-17	Turkey	19:58:21	5.75
-59	2	Vivamus	arcu. Vestibulum ante	0+	{14}	1999-06-03	Costa Rica	00:18:09	4
-60	2	et pede.	ipsum. Suspendisse non	12+	{23}	1998-03-24	Peru	13:48:57	4.285714
-61	2	sem mollis	lacus. Ut	16+	{3}	2017-04-17	Italy	19:36:49	4.4
-62	3	vitae nibh.	eget, volutpat	0+	{17}	1971-11-11	France	10:09:22	6
-63	1	mauris.	quam dignissim pharetra.	0+	{6}	1949-12-09	China	07:00:49	6.4
-64	1	venenatis vel,	amet ornare lectus	16+	{27,20}	1998-01-27	Peru	20:28:19	4.8333335
-65	3	Integer eu	at augue	12+	{5}	1957-01-07	South Korea	11:53:07	6.3333335
-66	3	Integer	Cras	12+	{28}	2005-11-10	New Zealand	23:27:39	3
-67	3	Morbi vehicula. Pellentesque	Phasellus	0+	{12,5}	1985-06-25	New Zealand	17:11:02	6.25
-68	4	Nunc mauris.	Vivamus	6+	{17}	2013-05-25	Italy	18:48:47	7.6666665
-69	3	sem ut	ut erat. Sed	12+	{11,9}	2012-01-26	Australia	04:14:14	5.75
-70	2	bibendum sed,	purus ac	12+	{12}	1992-01-17	Spain	06:28:55	7
-71	3	Mauris quis	nec, diam. Duis	0+	{12}	1940-02-23	United Kingdom	11:45:41	3.3333333
-72	4	non, lacinia	consectetuer adipiscing	12+	{23}	1935-07-04	Chile	19:21:07	5.5
-73	3	diam luctus	Donec est.	12+	{17}	1966-03-04	Spain	05:10:19	4.8
-74	2	Etiam imperdiet dictum	dictum.	6+	{7}	1941-04-18	Sweden	17:03:10	5.6
-75	4	mollis nec,	elementum	12+	{4}	1993-11-16	Indonesia	20:49:00	5.8
-76	2	egestas. Aliquam	sit amet	12+	{23}	1963-11-20	United States	02:58:00	6.3333335
-77	3	enim non	hendrerit	12+	{21,23}	2016-06-25	Ireland	05:35:29	5.2
-78	2	ut,	egestas nunc	12+	{14}	1945-08-05	Russian Federation	09:11:26	6.25
-79	2	Maecenas libero	lobortis risus. In	12+	{14}	1990-11-14	Pakistan	00:27:36	\N
-80	3	sem. Pellentesque	In	0+	{1,5,9}	1969-03-07	Chile	11:17:36	6
-81	2	tincidunt,	pede, nonummy ut,	16+	{14}	2005-03-27	France	04:33:51	6.6
-82	2	Nunc sed	penatibus	16+	{13}	1984-08-19	Brazil	02:57:04	4
-83	2	sit	cubilia	16+	{19,22}	1946-11-17	Vietnam	01:38:10	5.3333335
-84	2	dolor, tempus	vel quam	12+	{12}	2016-11-13	Canada	03:18:26	4
-85	4	Curabitur ut	suscipit, est	12+	{24}	1981-09-29	Belgium	00:25:03	5
-86	3	vitae aliquam	non, cursus	16+	{3}	2004-05-14	Nigeria	10:09:14	6.8333335
-87	3	eu augue porttitor	dui, nec	0+	{14}	1989-12-04	Ireland	14:56:56	3
-88	2	facilisis lorem	Donec porttitor	12+	{17}	1951-03-24	Netherlands	18:41:48	\N
-89	3	In	aliquam iaculis, lacus	16+	{16,3}	1941-11-15	South Africa	17:46:34	5
-90	4	mauris	id, ante. Nunc	6+	{14}	2004-06-24	Pakistan	09:44:14	6.8
-91	1	consequat, lectus sit	tortor at	6+	{15}	1955-09-10	Turkey	11:22:51	\N
-92	3	non, sollicitudin	Integer mollis.	6+	{1,12}	1985-07-13	Belgium	01:31:14	5
-93	4	vel pede	justo.	12+	{7}	1936-10-06	Costa Rica	06:01:12	3.75
-94	4	ipsum. Phasellus vitae	molestie	6+	{6}	2002-01-31	Spain	00:17:50	8.666667
-95	2	odio. Phasellus	fermentum	16+	{11}	1954-05-28	Ireland	11:13:04	6
-96	3	In at	sapien, gravida non,	12+	{12}	1955-06-23	Turkey	01:21:54	7.25
-97	4	egestas	erat, eget tincidunt	12+	{20}	1961-06-22	Chile	06:32:42	5
-98	3	congue	tellus id nunc	12+	{27}	1998-09-17	South Africa	23:56:39	5.6
-99	1	quis,	pharetra sed,	12+	{1,2,3}	2012-09-29	Ireland	05:01:01	3.6666667
-100	1	Mauris magna. Duis	egestas. Sed pharetra,	6+	{4}	1986-09-22	France	14:19:24	5.2
-101	3	elit.	eu	16+	{5}	1940-10-14	Singapore	01:48:13	5
-102	2	a, enim. Suspendisse	Pellentesque ut	6+	{13,7}	1955-07-25	Russian Federation	00:22:35	4.714286
-103	4	ornare sagittis felis.	Duis gravida.	16+	{16,2}	1956-08-24	South Korea	16:55:22	4
-104	2	leo,	non arcu.	12+	{1,2,3}	1970-01-26	Brazil	23:45:28	4.5
-105	2	magnis dis parturient	ad litora	12+	{12}	1968-11-16	Russian Federation	07:09:50	2
-106	4	ut lacus.	eu turpis.	16+	{8}	1938-10-02	Brazil	19:15:01	6
-107	2	tortor nibh	dictum. Phasellus	12+	{5}	1980-12-02	Nigeria	14:56:50	6
-108	2	dolor. Nulla semper	amet massa.	6+	{4,28}	1944-01-11	United States	20:02:43	1
-109	3	Mauris	eu nibh	6+	{13}	1977-08-09	Colombia	02:28:21	4
-110	2	neque vitae	tristique pellentesque,	0+	{14}	2019-09-01	Nigeria	20:01:51	5
-111	4	amet metus.	sit amet	16+	{12}	2012-10-19	Canada	16:00:19	4.5
-112	2	eu, eleifend	varius et,	12+	{1,2,3}	1988-11-05	Poland	03:16:18	8.5
-113	3	dis parturient montes,	semper tellus	0+	{13}	1976-05-25	Ukraine	10:11:24	4.75
-114	2	sem. Pellentesque	tellus non magna.	0+	{19}	1987-01-28	Indonesia	09:41:24	5.75
-115	2	diam luctus	montes, nascetur	16+	{4}	1957-01-05	Canada	18:29:20	5.8333335
-116	3	Cras pellentesque.	Ut	12+	{25}	1939-11-22	Sweden	13:59:08	2.5
-117	4	est, mollis	Sed nunc est,	6+	{11,3}	1954-01-15	United Kingdom	13:06:41	2.5
-118	3	conubia nostra,	Nullam enim.	12+	{28}	2005-12-03	South Korea	00:46:49	4.875
-119	2	dolor	consectetuer adipiscing	12+	{17}	1988-08-01	Vietnam	02:55:58	5
-120	1	arcu	elit, pretium	6+	{14}	1946-06-12	Vietnam	01:46:32	4.25
-121	2	luctus	at	12+	{18}	2017-12-15	Poland	14:24:11	7.1666665
-122	1	nec,	Etiam	6+	{9}	1962-07-30	Netherlands	20:52:31	5.2
-123	3	a neque.	interdum. Nunc	12+	{8}	1998-09-03	Canada	20:59:06	3.6666667
-124	3	varius orci,	nunc.	12+	{1,12}	2001-04-02	India	01:24:01	3.5
-125	2	Aliquam nec enim.	Mauris	6+	{23}	2021-06-17	United Kingdom	19:15:10	6.6
-126	3	pede, ultrices	vel, vulputate	6+	{1,5,9}	1969-04-23	Turkey	15:37:14	6.8333335
-127	3	dictum. Proin	aliquam	0+	{21,23}	1956-11-20	Singapore	05:26:22	7.2
-128	4	nibh. Quisque	viverra. Maecenas iaculis	12+	{7}	1984-07-09	Sweden	05:10:22	7
-129	2	quis turpis	sed leo. Cras	12+	{27,20}	1978-05-10	South Korea	10:57:40	5.2
-130	1	ac	erat nonummy ultricies	6+	{24}	1933-06-21	Netherlands	19:37:07	7.6666665
-131	4	mollis	Aliquam erat	12+	{16,22}	2001-10-22	Vietnam	22:25:33	5
-132	3	faucibus orci luctus	neque. Sed eget	6+	{13}	2011-04-22	Australia	17:50:58	\N
-133	3	Sed	metus. Vivamus	12+	{13,7}	2018-08-12	Pakistan	17:56:19	3
-134	3	et ultrices posuere	malesuada malesuada.	16+	{23}	1934-11-03	Belgium	10:36:41	6.25
-135	2	quis turpis	sem. Pellentesque	12+	{8}	1937-06-28	Brazil	03:28:52	6
-136	4	tempor lorem,	Ut semper	12+	{11}	1970-03-16	United States	14:32:28	3
-137	1	nisl. Quisque	magnis dis	12+	{23}	1962-04-10	Costa Rica	17:39:32	5.5
-138	2	auctor, velit eget	a felis	16+	{1,4,8}	1968-11-25	Australia	11:51:13	8.666667
-139	4	Donec feugiat	ac,	12+	{27}	1999-05-09	Indonesia	16:57:36	4.25
-140	3	erat, in	ipsum. Phasellus	12+	{1,9}	1970-03-10	Pakistan	15:34:07	\N
-141	4	non ante	cursus luctus,	6+	{21}	1966-06-22	Belgium	00:52:57	9.5
-142	1	lobortis tellus	fringilla, porttitor vulputate,	12+	{6}	1940-08-06	Netherlands	14:40:32	4
-143	2	et ultrices posuere	posuere cubilia Curae	12+	{15}	1997-12-20	Italy	06:43:09	5.75
-144	3	Quisque	velit	6+	{17}	1998-05-01	Singapore	10:14:51	6.3333335
-145	2	dolor. Donec	dictum cursus. Nunc	6+	{28}	1996-04-10	Norway	00:55:00	6
-146	4	nisi.	quis urna.	12+	{12}	1992-06-25	Chile	07:51:25	4.3333335
-147	2	varius	Nulla	12+	{27,20}	1969-03-28	Netherlands	07:32:07	\N
-148	2	et pede. Nunc	varius et, euismod	6+	{28}	1991-09-14	Turkey	21:44:47	7.25
-149	3	Donec	Curae Phasellus	12+	{19}	1956-03-17	Norway	15:10:22	2
-150	3	elit, dictum	Vivamus	12+	{3}	2014-01-01	Italy	15:16:16	2
+10	2	Proin eget odio.	mauris a	12+	{4}	1977-08-31	Brazil	21:05:31	7.2
+11	2	luctus sit	penatibus	12+	{27,20}	1993-09-03	Nigeria	21:34:22	7.1
+12	3	velit	condimentum eget, volutpat	12+	{12,5}	1991-09-10	Austria	12:44:57	7.9
+13	3	Quisque	in aliquet lobortis,	0+	{4}	2009-04-16	Spain	07:05:23	7
+14	1	arcu. Vestibulum	eget, venenatis	0+	{11,9}	1939-09-24	Costa Rica	01:31:54	6.9
+15	1	risus. Donec egestas.	risus. Duis a	6+	{15}	1989-05-31	Ireland	15:57:56	7.2
+16	3	pharetra. Quisque	semper	6+	{11,3}	1953-10-29	Sweden	17:30:50	6.2
+17	1	volutpat. Nulla	tempor augue ac	6+	{1}	1939-05-05	New Zealand	16:21:12	5.6
+18	3	ligula. Nullam	semper cursus. Integer	6+	{16}	2013-03-09	United Kingdom	09:58:41	5.2
+19	4	purus gravida sagittis.	rutrum magna.	0+	{9}	1987-02-18	South Africa	20:02:00	4
+20	3	montes, nascetur	ultrices. Duis volutpat	12+	{12}	1952-09-10	Norway	08:30:17	6.8
+21	2	quis	pede.	6+	{1,5,9}	1951-02-11	Canada	17:53:28	7.3
+22	2	Nam interdum	luctus	0+	{19}	2002-08-05	Austria	13:59:40	5.6
+23	1	lectus pede, ultrices	mauris id	0+	{12}	2009-11-28	Sweden	11:23:59	4.7
+24	3	Nam tempor	lacus.	12+	{11,9}	2008-07-11	Sweden	17:07:54	4
+25	3	risus. In	id magna	12+	{21,23}	1939-09-07	Poland	02:57:25	4.4
+26	3	fringilla ornare	nonummy ac,	12+	{2}	1976-08-04	Poland	19:24:28	6.2
+27	3	Nullam	erat vel pede	0+	{1,2,3}	1978-10-10	Canada	06:42:34	3.8
+28	4	est	ligula	6+	{21}	2005-09-02	Singapore	11:07:35	5
+29	2	lobortis quis, pede.	leo. Cras vehicula	6+	{23}	1940-06-08	Russian Federation	17:24:48	4.1
+30	4	auctor ullamcorper,	ridiculus mus.	16+	{2}	1955-08-05	South Africa	09:00:50	4.2
+31	2	ullamcorper. Duis	auctor, velit eget	0+	{1}	2015-09-24	New Zealand	11:07:33	3.9
+32	2	velit. Pellentesque	eu, accumsan	6+	{21}	2014-06-02	Colombia	18:56:15	5.7
+33	3	faucibus. Morbi	sagittis semper. Nam	12+	{6}	1940-06-09	France	21:25:38	6.1
+34	1	luctus et	urna et	12+	{15}	1978-06-14	China	00:59:07	6.7
+35	3	nulla	ac, fermentum vel,	6+	{17}	1973-09-22	Germany	05:50:18	5.8
+36	1	sem,	non enim. Mauris	16+	{10}	1934-05-20	Netherlands	21:51:07	3.9
+37	3	amet, consectetuer	tristique	6+	{2,17}	1949-11-30	Philippines	10:03:51	6.1
+38	1	pretium et,	lacus pede	6+	{23}	1936-11-27	Brazil	11:39:18	4
+39	1	Sed	Quisque ac	0+	{7}	1986-11-25	Nigeria	09:35:27	2.1
+40	2	mattis. Integer eu	non, feugiat nec,	6+	{24}	1949-07-01	Netherlands	07:48:50	6.2
+41	2	lacus. Mauris	Donec luctus aliquet	12+	{2}	1990-12-28	South Africa	13:36:28	2.7
+42	3	consectetuer adipiscing	consectetuer mauris	16+	{21}	2019-01-18	Norway	06:00:00	4.9
+43	3	Duis risus	vulputate, nisi	6+	{15}	1974-07-09	India	16:30:36	1.8
+44	4	rutrum	nulla. Cras	0+	{25}	1960-12-08	Sweden	18:03:57	4.5
+45	1	elit. Curabitur	Integer mollis. Integer	16+	{18}	2005-01-23	France	08:14:04	6.8
+46	4	tellus	Cras vulputate	6+	{10}	2006-02-18	Italy	22:22:57	6.8
+47	4	et magnis dis	ipsum. Suspendisse	6+	{13}	1969-01-10	Chile	18:07:43	1.7
+48	2	ligula	egestas. Aliquam	12+	{1}	1952-06-06	Peru	23:25:05	3.6
+49	4	ut erat. Sed	et	6+	{28}	1946-02-16	Norway	15:32:44	4.7
+50	3	Aenean eget	dignissim pharetra. Nam	0+	{6}	1943-02-13	Costa Rica	23:20:22	5.1
+51	4	non massa non	ante.	12+	{8}	1950-10-22	Germany	19:12:46	5.7
+52	3	nec, malesuada	In mi	0+	{17}	1988-06-26	Indonesia	00:04:22	4.3
+53	3	hymenaeos. Mauris	sagittis semper.	6+	{13,7}	2003-08-26	Nigeria	18:48:02	5
+54	1	ac mattis	at, nisi.	6+	{4}	1961-02-12	Spain	10:36:59	7.4
+55	3	ligula. Nullam	non, feugiat nec,	6+	{21,23}	1953-07-15	Spain	08:43:32	7.1
+56	2	Quisque	magnis dis parturient	6+	{28}	1996-06-02	Mexico	03:14:35	7.6
+57	1	Nunc	amet, consectetuer	6+	{1,5,9}	2018-07-15	Canada	04:01:47	6.8
+58	3	penatibus	Donec tempus, lorem	6+	{17}	2002-01-17	Turkey	19:58:21	8
+59	2	Vivamus	arcu. Vestibulum ante	0+	{14}	1999-06-03	Costa Rica	00:18:09	5.5
+60	2	et pede.	ipsum. Suspendisse non	12+	{23}	1998-03-24	Peru	13:48:57	3.1
+61	2	sem mollis	lacus. Ut	16+	{3}	2017-04-17	Italy	19:36:49	5.6
+62	3	vitae nibh.	eget, volutpat	0+	{17}	1971-11-11	France	10:09:22	5
+63	1	mauris.	quam dignissim pharetra.	0+	{6}	1949-12-09	China	07:00:49	6
+64	1	venenatis vel,	amet ornare lectus	16+	{27,20}	1998-01-27	Peru	20:28:19	4
+65	3	Integer eu	at augue	12+	{5}	1957-01-07	South Korea	11:53:07	5.6
+66	3	Integer	Cras	12+	{28}	2005-11-10	New Zealand	23:27:39	1.3
+67	3	Morbi vehicula. Pellentesque	Phasellus	0+	{12,5}	1985-06-25	New Zealand	17:11:02	6.2
+68	4	Nunc mauris.	Vivamus	6+	{17}	2013-05-25	Italy	18:48:47	1.7
+69	3	sem ut	ut erat. Sed	12+	{11,9}	2012-01-26	Australia	04:14:14	3
+70	2	bibendum sed,	purus ac	12+	{12}	1992-01-17	Spain	06:28:55	7.5
+71	3	Mauris quis	nec, diam. Duis	0+	{12}	1940-02-23	United Kingdom	11:45:41	4.1
+72	4	non, lacinia	consectetuer adipiscing	12+	{23}	1935-07-04	Chile	19:21:07	2.9
+73	3	diam luctus	Donec est.	12+	{17}	1966-03-04	Spain	05:10:19	4.9
+74	2	Etiam imperdiet dictum	dictum.	6+	{7}	1941-04-18	Sweden	17:03:10	7.4
+75	4	mollis nec,	elementum	12+	{4}	1993-11-16	Indonesia	20:49:00	7.6
+76	2	egestas. Aliquam	sit amet	12+	{23}	1963-11-20	United States	02:58:00	5.4
+77	3	enim non	hendrerit	12+	{21,23}	2016-06-25	Ireland	05:35:29	4.7
+78	2	ut,	egestas nunc	12+	{14}	1945-08-05	Russian Federation	09:11:26	4.7
+79	2	Maecenas libero	lobortis risus. In	12+	{14}	1990-11-14	Pakistan	00:27:36	5.6
+80	3	sem. Pellentesque	In	0+	{1,5,9}	1969-03-07	Chile	11:17:36	4
+81	2	tincidunt,	pede, nonummy ut,	16+	{14}	2005-03-27	France	04:33:51	7.2
+82	2	Nunc sed	penatibus	16+	{13}	1984-08-19	Brazil	02:57:04	6.6
+83	2	sit	cubilia	16+	{19,22}	1946-11-17	Vietnam	01:38:10	4.5
+84	2	dolor, tempus	vel quam	12+	{12}	2016-11-13	Canada	03:18:26	6.5
+85	4	Curabitur ut	suscipit, est	12+	{24}	1981-09-29	Belgium	00:25:03	4.1
+86	3	vitae aliquam	non, cursus	16+	{3}	2004-05-14	Nigeria	10:09:14	4.2
+87	3	eu augue porttitor	dui, nec	0+	{14}	1989-12-04	Ireland	14:56:56	5.7
+88	2	facilisis lorem	Donec porttitor	12+	{17}	1951-03-24	Netherlands	18:41:48	4.3
+89	3	In	aliquam iaculis, lacus	16+	{16,3}	1941-11-15	South Africa	17:46:34	7.4
+90	4	mauris	id, ante. Nunc	6+	{14}	2004-06-24	Pakistan	09:44:14	3.6
+91	1	consequat, lectus sit	tortor at	6+	{15}	1955-09-10	Turkey	11:22:51	6.3
+92	3	non, sollicitudin	Integer mollis.	6+	{1,12}	1985-07-13	Belgium	01:31:14	4.7
+93	4	vel pede	justo.	12+	{7}	1936-10-06	Costa Rica	06:01:12	4.6
+94	4	ipsum. Phasellus vitae	molestie	6+	{6}	2002-01-31	Spain	00:17:50	5
+95	2	odio. Phasellus	fermentum	16+	{11}	1954-05-28	Ireland	11:13:04	3.4
+96	3	In at	sapien, gravida non,	12+	{12}	1955-06-23	Turkey	01:21:54	3.2
+97	4	egestas	erat, eget tincidunt	12+	{20}	1961-06-22	Chile	06:32:42	3.2
+98	3	congue	tellus id nunc	12+	{27}	1998-09-17	South Africa	23:56:39	5.7
+99	1	quis,	pharetra sed,	12+	{1,2,3}	2012-09-29	Ireland	05:01:01	3.3
+100	1	Mauris magna. Duis	egestas. Sed pharetra,	6+	{4}	1986-09-22	France	14:19:24	5.4
+101	3	elit.	eu	16+	{5}	1940-10-14	Singapore	01:48:13	4.5
+102	2	a, enim. Suspendisse	Pellentesque ut	6+	{13,7}	1955-07-25	Russian Federation	00:22:35	6
+103	4	ornare sagittis felis.	Duis gravida.	16+	{16,2}	1956-08-24	South Korea	16:55:22	4.7
+104	2	leo,	non arcu.	12+	{1,2,3}	1970-01-26	Brazil	23:45:28	5.1
+105	2	magnis dis parturient	ad litora	12+	{12}	1968-11-16	Russian Federation	07:09:50	7.9
+106	4	ut lacus.	eu turpis.	16+	{8}	1938-10-02	Brazil	19:15:01	3.8
+107	2	tortor nibh	dictum. Phasellus	12+	{5}	1980-12-02	Nigeria	14:56:50	4.3
+108	2	dolor. Nulla semper	amet massa.	6+	{4,28}	1944-01-11	United States	20:02:43	3.4
+109	3	Mauris	eu nibh	6+	{13}	1977-08-09	Colombia	02:28:21	3.9
+110	2	neque vitae	tristique pellentesque,	0+	{14}	2019-09-01	Nigeria	20:01:51	3
+111	4	amet metus.	sit amet	16+	{12}	2012-10-19	Canada	16:00:19	5.3
+112	2	eu, eleifend	varius et,	12+	{1,2,3}	1988-11-05	Poland	03:16:18	4.6
+113	3	dis parturient montes,	semper tellus	0+	{13}	1976-05-25	Ukraine	10:11:24	4.4
+114	2	sem. Pellentesque	tellus non magna.	0+	{19}	1987-01-28	Indonesia	09:41:24	3.9
+115	2	diam luctus	montes, nascetur	16+	{4}	1957-01-05	Canada	18:29:20	4.6
+116	3	Cras pellentesque.	Ut	12+	{25}	1939-11-22	Sweden	13:59:08	3.7
+117	4	est, mollis	Sed nunc est,	6+	{11,3}	1954-01-15	United Kingdom	13:06:41	5.4
+118	3	conubia nostra,	Nullam enim.	12+	{28}	2005-12-03	South Korea	00:46:49	5.9
+119	2	dolor	consectetuer adipiscing	12+	{17}	1988-08-01	Vietnam	02:55:58	6.9
+120	1	arcu	elit, pretium	6+	{14}	1946-06-12	Vietnam	01:46:32	3.1
+121	2	luctus	at	12+	{18}	2017-12-15	Poland	14:24:11	5.1
+122	1	nec,	Etiam	6+	{9}	1962-07-30	Netherlands	20:52:31	3.8
+123	3	a neque.	interdum. Nunc	12+	{8}	1998-09-03	Canada	20:59:06	4.2
+124	3	varius orci,	nunc.	12+	{1,12}	2001-04-02	India	01:24:01	5.9
+125	2	Aliquam nec enim.	Mauris	6+	{23}	2021-06-17	United Kingdom	19:15:10	4
+126	3	pede, ultrices	vel, vulputate	6+	{1,5,9}	1969-04-23	Turkey	15:37:14	6.2
+127	3	dictum. Proin	aliquam	0+	{21,23}	1956-11-20	Singapore	05:26:22	7.5
+128	4	nibh. Quisque	viverra. Maecenas iaculis	12+	{7}	1984-07-09	Sweden	05:10:22	4.8
+129	2	quis turpis	sed leo. Cras	12+	{27,20}	1978-05-10	South Korea	10:57:40	5.8
+130	1	ac	erat nonummy ultricies	6+	{24}	1933-06-21	Netherlands	19:37:07	2
+131	4	mollis	Aliquam erat	12+	{16,22}	2001-10-22	Vietnam	22:25:33	4
+132	3	faucibus orci luctus	neque. Sed eget	6+	{13}	2011-04-22	Australia	17:50:58	6.8
+133	3	Sed	metus. Vivamus	12+	{13,7}	2018-08-12	Pakistan	17:56:19	4.4
+134	3	et ultrices posuere	malesuada malesuada.	16+	{23}	1934-11-03	Belgium	10:36:41	4.4
+135	2	quis turpis	sem. Pellentesque	12+	{8}	1937-06-28	Brazil	03:28:52	6.4
+136	4	tempor lorem,	Ut semper	12+	{11}	1970-03-16	United States	14:32:28	3.7
+137	1	nisl. Quisque	magnis dis	12+	{23}	1962-04-10	Costa Rica	17:39:32	2.6
+138	2	auctor, velit eget	a felis	16+	{1,4,8}	1968-11-25	Australia	11:51:13	3.3
+139	4	Donec feugiat	ac,	12+	{27}	1999-05-09	Indonesia	16:57:36	5.9
+140	3	erat, in	ipsum. Phasellus	12+	{1,9}	1970-03-10	Pakistan	15:34:07	3.7
+141	4	non ante	cursus luctus,	6+	{21}	1966-06-22	Belgium	00:52:57	3.7
+142	1	lobortis tellus	fringilla, porttitor vulputate,	12+	{6}	1940-08-06	Netherlands	14:40:32	6.5
+143	2	et ultrices posuere	posuere cubilia Curae	12+	{15}	1997-12-20	Italy	06:43:09	7.5
+144	3	Quisque	velit	6+	{17}	1998-05-01	Singapore	10:14:51	4.1
+145	2	dolor. Donec	dictum cursus. Nunc	6+	{28}	1996-04-10	Norway	00:55:00	4.5
+146	4	nisi.	quis urna.	12+	{12}	1992-06-25	Chile	07:51:25	8.5
+147	2	varius	Nulla	12+	{27,20}	1969-03-28	Netherlands	07:32:07	5.5
+148	2	et pede. Nunc	varius et, euismod	6+	{28}	1991-09-14	Turkey	21:44:47	6.3
+149	3	Donec	Curae Phasellus	12+	{19}	1956-03-17	Norway	15:10:22	3.4
+150	3	elit, dictum	Vivamus	12+	{3}	2014-01-01	Italy	15:16:16	4.8
+2	2	tempor, est	nec orci.	12+	{1,2,8}	1932-10-02	Philippines	04:06:21	3.4
 \.
 
 
@@ -2268,7 +2278,6 @@ COPY public.stars (movie_id, user_id, number_of_stars, rated_at) FROM stdin;
 46	118	3	2022-10-19 04:56:57
 90	20	8	2023-04-21 04:49:40
 48	36	6	2022-09-24 12:27:17
-34	88	7	2022-09-18 01:43:24
 77	21	7	2022-08-28 03:20:51
 125	76	2	2023-05-31 07:03:08
 2	90	5	2022-07-23 12:54:08
@@ -2318,6 +2327,8 @@ COPY public.stars (movie_id, user_id, number_of_stars, rated_at) FROM stdin;
 53	108	6	2022-08-02 04:59:16
 135	104	5	2023-09-09 06:00:27
 90	93	4	2021-12-04 09:15:06
+34	89	10	2022-09-27 11:16:52.437041
+34	88	9	2022-09-18 01:43:24
 \.
 
 
@@ -3523,17 +3534,24 @@ ALTER TABLE ONLY public.viewer_profiles
 
 
 --
--- Name: stars check_movie_genres_on_insert; Type: TRIGGER; Schema: public; Owner: gb_sol
+-- Name: stars_movie_id_idx; Type: INDEX; Schema: public; Owner: gb_sol
 --
 
-CREATE TRIGGER check_movie_genres_on_insert BEFORE INSERT ON public.stars FOR EACH ROW EXECUTE FUNCTION public.check_movie_genres_trigger();
+CREATE INDEX stars_movie_id_idx ON public.stars USING btree (movie_id);
 
 
 --
--- Name: stars check_movie_genres_on_update; Type: TRIGGER; Schema: public; Owner: gb_sol
+-- Name: stars_rated_at_idx; Type: INDEX; Schema: public; Owner: gb_sol
 --
 
-CREATE TRIGGER check_movie_genres_on_update BEFORE UPDATE ON public.stars FOR EACH ROW EXECUTE FUNCTION public.check_movie_genres_trigger();
+CREATE INDEX stars_rated_at_idx ON public.stars USING btree (rated_at);
+
+
+--
+-- Name: stars_user_id_idx; Type: INDEX; Schema: public; Owner: gb_sol
+--
+
+CREATE INDEX stars_user_id_idx ON public.stars USING btree (user_id);
 
 
 --
